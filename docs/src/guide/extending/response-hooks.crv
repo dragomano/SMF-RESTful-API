@@ -11,7 +11,7 @@ order: 5
 Use `integrate_api_pre_send`. It fires before the response is sent and lets you adjust the body, status, and headers — for CORS, rate-limit headers, or envelope wrappers.
 
 ```php "preSend"
-public function preSend(array &$payload, int &$status, array &$headers): void
+public function preSend(mixed &$payload, int &$status, array &$headers): void
 {
 	$headers['Access-Control-Allow-Origin'] = '*';
 }
@@ -19,9 +19,15 @@ public function preSend(array &$payload, int &$status, array &$headers): void
 
 Parameters are passed by reference:
 
-- `&$payload` — the JSON body array that will be encoded.
+- `&$payload` — the body that will be encoded as JSON; it is `null` for an empty `204` answer.
 - `&$status` — the HTTP status code.
 - `&$headers` — the response headers array (header name → value).
+
+The hook also fires for error answers, so a wrapper can be applied to failures as well.
+
+::: tip "Browser clients and preflight"
+The API answers only `GET`, `POST`, `PUT`, `PATCH` and `DELETE`; a CORS preflight (`OPTIONS`) has to be handled by your own hook — for example in `integrate_api_pre_dispatch`, answer it there with the `Access-Control-Allow-*` headers.
+:::
 
 ## Adjusting the request before routing
 

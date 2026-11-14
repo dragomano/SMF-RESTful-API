@@ -13,7 +13,7 @@ order: 5
 Используйте `integrate_api_pre_send`. Хук срабатывает перед отправкой ответа и позволяет править тело, статус и заголовки — для CORS, заголовков лимитов или обёрток-конвертов.
 
 ```php "preSend"
-public function preSend(array &$payload, int &$status, array &$headers): void
+public function preSend(mixed &$payload, int &$status, array &$headers): void
 {
 	$headers['Access-Control-Allow-Origin'] = '*';
 }
@@ -21,9 +21,15 @@ public function preSend(array &$payload, int &$status, array &$headers): void
 
 Параметры передаются по ссылке:
 
-- `&$payload` — массив тела JSON, который будет закодирован.
+- `&$payload` — тело, которое будет закодировано в JSON; для пустого ответа `204` оно равно `null`.
 - `&$status` — HTTP-код статуса.
 - `&$headers` — массив заголовков ответа (имя → значение).
+
+Хук срабатывает и для ответов с ошибкой, так что обёртку можно применять и к неудачным запросам.
+
+::: tip "Браузерные клиенты и preflight"
+API отвечает только на `GET`, `POST`, `PUT`, `PATCH` и `DELETE`; CORS-preflight (`OPTIONS`) нужно обработать своим хуком — например в `integrate_api_pre_dispatch`, ответив там заголовками `Access-Control-Allow-*`.
+:::
 
 {#Adjusting-the-request-before-routing}
 ## Правка запроса до маршрутизации

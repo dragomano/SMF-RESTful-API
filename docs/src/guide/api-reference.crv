@@ -1,0 +1,316 @@
+---
+title: API Reference
+description: Complete endpoint list of SMF RESTful API — methods, paths, required permissions, writable fields, response envelope, pagination and error codes.
+order: 3
+---
+
+# API Reference
+
+Every endpoint lives under a single SMF action, `index.php?action=api`, and takes the resource path in the `path` parameter:
+
+```
+index.php?action=api;path=v1/members/5
+```
+
+With a rewrite rule in place the same resource is addressed as `/api/v1/members/5` — see [Clean URLs](/guide/clean-urls). Every path in the tables below is written relative to `v1`, so the full address is `index.php?action=api;path=v1/<path>`.
+
+::: warning "The API must be enabled"
+The mod ships switched off. Turn it on at *Admin → Configuration → Modifications → RESTful API* ("Enable the API"). While it is off, every endpoint answers `503 Service Unavailable` with the error code `service_unavailable`.
+:::
+
+## Request basics
+
+### Authentication
+
+Every request needs an API key; the key selects the member whose permissions apply. It is taken from the first source that is present:
+
+1. the `Authorization: Bearer <key>` header;
+2. the `X-API-Key: <key>` header;
+3. the `api_key` query parameter.
+
+Keys are managed at *Admin → Configuration → Modifications → RESTful API*: each key is an opaque token bound to a member id. See [Custom Authentication](/guide/extending/authentication) for replacing the scheme with your own.
+
+Only fully activated accounts (`is_activated = 1`) can drive the API. A missing, unknown or deactivated key answers `401` with the code `unauthorized`.
+
+### Version prefix
+
+The first path segment is the API contract version. Only `v1` is accepted; anything else answers `404` with the code `not_found` and the message `Unsupported API version: <segment>`.
+
+### Methods
+
+`GET`, `POST`, `PUT`, `PATCH` and `DELETE` are supported. A known path with an unsupported method answers `405` with the code `method_not_allowed`.
+
+Clients that cannot send verbs other than `GET` and `POST` may override the method with the `X-HTTP-Method-Override` header or the `_method` query parameter:
+
+```
+POST /index.php?action=api&path=v1/members/5&_method=PATCH
+```
+
+The override is only honoured for `POST` requests.
+
+### Request body
+
+The body is parsed as JSON when the `Content-Type` header contains `application/json`; otherwise the ordinary form-encoded payload is used. Malformed JSON answers `400` with the code `bad_request`.
+
+```json "Request body example"
+{
+  "username": "demo",
+  "email": "demo@example.com"
+}
+```
+
+### Reserved query parameters
+
+SMF reserves `board`, `topic`, `msg`, `start` and `action` as query parameters: passing one of them makes the core render a forum page instead of reaching `action=api`. Parent ids therefore travel in the path (`/boards/{board_id}/topics`), never in the query string. See [Adding a Resource](/guide/extending/adding-resource) for the details.
+
+### Pagination
+
+Collections accept two query parameters:
+
+- `limit` — page size, `1` to `100`, default `25`;
+- `offset` — zero-based offset, default `0`.
+
+Both are clamped to those bounds; out-of-range values are silently corrected rather than rejected.
+
+## Response format
+
+### A single resource
+
+```json "Response"
+{
+  "data": {
+    "id": 5,
+    "username": "demo"
+  }
+}
+```
+
+### A collection
+
+Collections add pagination metadata:
+
+```json "Response"
+{
+  "data": [
+    { "id": 5, "username": "demo" }
+  ],
+  "meta": {
+    "total": 42,
+    "limit": 25,
+    "offset": 0,
+    "count": 1
+  }
+}
+```
+
+`total` is the number of matching rows, `count` the number of rows in this page.
+
+### An error
+
+```json "Response"
+{
+  "error": {
+    "code": "not_found",
+    "message": "Member not found"
+  }
+}
+```
+
+`details` is added when the error carries extra information (for example the registration errors of `POST /members`).
+
+### Status codes
+
+| Code | Meaning |
+| --- | --- |
+| `200` | The request succeeded; the body carries `data` |
+| `201` | The resource was created |
+| `204` | The request succeeded and has no body (`DELETE` operations) |
+| `400` | The request was malformed or a field was invalid (`bad_request`) |
+| `401` | The key is missing, unknown or belongs to a deactivated account (`unauthorized`) |
+| `403` | The member lacks the permission for the operation (`forbidden`) |
+| `404` | The resource or the endpoint does not exist (`not_found`) |
+| `405` | The path exists, but not for this method (`method_not_allowed`) |
+| `429` | Rate limited by a third-party hook (`too_many_requests`) |
+| `500` | An unexpected error occurred; it is logged (`internal_error`) |
+| `503` | The API is switched off (`service_unavailable`) |
+
+### Headers
+
+Every response is sent as `Content-Type: application/json; charset=utf-8` with `X-Content-Type-Options: nosniff`. Additional headers can be added through the `integrate_api_pre_send` hook.
+
+## Categories
+
+::: tip "Required fields"
+In the field lists below a field marked *required* is required for a full replace (`PUT`). A creation (`POST`) only demands the fields its endpoint checks explicitly — usually the name and, for boards, the parent category.
+:::
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | int | Category id |
+| `name` | string | Category name |
+| `description` | string | Description |
+| `order` | int | Position among the categories (0-based) |
+| `can_collapse` | bool | Whether the category can be collapsed |
+
+| Method | Path | Permission / notes |
+| --- | --- | --- |
+| `GET` | `categories` | Lists the categories that hold at least one board the member may see |
+| `GET` | `categories/{id}` | One category; the payload also carries its visible boards in `boards` |
+| `GET` | `categories/{cat_id}/boards` | The boards of one category |
+| `POST` | `categories` | `manage_boards`; `name` is required; answers `201` |
+| `PUT` | `categories/{id}` | `manage_boards`; `name` and `description` are required |
+| `PATCH` | `categories/{id}` | `manage_boards`; only the supplied fields change |
+| `DELETE` | `categories/{id}` | `manage_boards`; the boards move to `?move_boards_to=<id>` or are deleted with the category |
+
+Writable fields: `name` (required), `description` (required), `order`, `can_collapse`. The SMF column name `cat_order` is accepted instead of `order`.
+
+## Boards
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | int | Board id |
+| `category` | int | Id of the owning category |
+| `parent` | int | Id of the parent board, `0` for a root board |
+| `name` | string | Board name |
+| `description` | string | Description |
+| `num_topics` | int | Number of topics |
+| `num_posts` | int | Number of posts |
+| `order` | int | Position among the sibling boards (0-based) |
+
+| Method | Path | Permission / notes |
+| --- | --- | --- |
+| `GET` | `boards` | Lists the boards the member may see |
+| `GET` | `boards/{id}` | One board |
+| `GET` | `boards/{board_id}/topics` | The topics of one board |
+| `POST` | `boards` | `manage_boards`; `name` and `category` are required; answers `201` |
+| `PUT` | `boards/{id}` | `manage_boards`; `name` and `description` are required |
+| `PATCH` | `boards/{id}` | `manage_boards`; only the supplied fields change |
+| `DELETE` | `boards/{id}` | `manage_boards`; the child boards move to `?move_children_to=<id>` or are deleted with the board |
+
+Writable fields: `name` (required), `description` (required), `category`, `parent`, `order`, `id_profile`, `id_theme`, `override_theme`, `count_posts`, `member_groups`, `deny_member_groups`, `redirect`. The SMF column names `id_cat`, `id_parent` and `board_order` are accepted as aliases. A parent board has to live in the same category as the board itself.
+
+## Members
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | int | Member id |
+| `username` | string | Login name |
+| `name` | string | Real name |
+| `posts` | int | Number of posts |
+| `date_registered` | int | Unix timestamp |
+| `last_login` | int | Unix timestamp |
+| `primary_group` | int | Primary group id |
+| `post_group` | int | Post group id |
+| `additional_groups` | string | Comma-separated group ids |
+| `email` | string | Only for administrators |
+| `personal_text`, `signature`, `birthdate`, `website_title`, `website_url`, `usertitle`, `avatar`, `show_online`, `time_format`, `timezone`, `time_offset`, `id_theme`, `lngfile`, `smiley_set`, `pm_receive_from`, `warning`, `ignore_boards`, `secret_question`, `is_activated` | — | Only for administrators, and only in the single-resource answer |
+
+| Method | Path | Permission / notes |
+| --- | --- | --- |
+| `GET` | `members` | `view_mlist`; lists activated members |
+| `GET` | `members/{id}` | One member; the private fields are added for administrators |
+| `POST` | `members` | `moderate_forum`; `username` and `email` are required; answers `201` |
+| `PUT` | `members/{id}` | `profile_identity_own` for yourself, `profile_identity_any` for others; `username`, `name` and `email` are required |
+| `PATCH` | `members/{id}` | Same permission; only the supplied fields change |
+| `DELETE` | `members/{id}` | `profile_remove_own` for yourself, `profile_remove_any` for others; an administrator can only be deleted by an administrator |
+
+Writable fields: `username` (required), `name` (required), `email` (required), `password`, `primary_group`, `post_group`, `additional_groups`, `posts`, `personal_text`, `signature`, `birthdate`, `website_title`, `website_url`, `usertitle`, `avatar`, `show_online`, `time_format`, `timezone`, `time_offset`, `id_theme`, `lngfile`, `smiley_set`, `pm_receive_from`, `warning`, `ignore_boards`, `is_activated`, `secret_question`, `secret_answer`. The SMF column names `member_name`, `real_name`, `email_address`, `passwd`, `id_group` and `id_post_group` are accepted as aliases.
+
+Changing the groups needs `manage_membergroups`; changing `posts`, `warning`, `is_activated`, `secret_question` or `secret_answer` needs `moderate_forum`. Changing the password of another member needs `moderate_forum`.
+
+## Member groups
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | int | Group id |
+| `name` | string | Group name |
+| `description` | string | Description |
+| `type` | int | `0` private, `1` protected, `2` requestable, `3` free |
+| `min_posts` | int | Post threshold; `-1` means "not post-based" |
+| `max_messages` | int | Message limit |
+| `color` | string | Colour of the group in the online users list |
+| `icons` | string | Group icons |
+| `hidden` | int | `1` when the group is hidden |
+| `parent` | int | Parent group id |
+| `tfa_required` | bool | Whether the group requires two-factor authentication |
+
+| Method | Path | Permission / notes |
+| --- | --- | --- |
+| `GET` | `groups` | Hidden groups are listed only for `manage_membergroups` holders, the moderator group only for administrators |
+| `GET` | `groups/{id}` | One group, with the same visibility rules |
+| `POST` | `groups` | `manage_membergroups`; `name` is required; answers `201` |
+| `PUT` | `groups/{id}` | `manage_membergroups`; `name`, `description`, `type`, `min_posts` and `max_messages` are required |
+| `PATCH` | `groups/{id}` | `manage_membergroups`; only the supplied fields change |
+| `DELETE` | `groups/{id}` | `manage_membergroups`; a group used by a paid subscription cannot be deleted |
+
+Writable fields: `name` (required), `description` (required), `type` (required), `min_posts` (required), `max_messages` (required), `color`, `icons`, `hidden`, `parent`, `tfa_required`. The SMF column names `group_name`, `group_type`, `online_color` and `id_parent` are accepted as aliases. Protected groups (`type = 1`) can only be created, changed or deleted by administrators.
+
+## Topics
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | int | Topic id |
+| `board` | int | Id of the owning board |
+| `subject` | string | Subject of the opening post |
+| `starter` | object | `id` and `name` of the topic author |
+| `poster_time` | int | Unix timestamp of the opening post |
+| `num_replies` | int | Number of replies |
+| `num_views` | int | Number of views |
+| `locked` | bool | Whether the topic is locked |
+| `is_sticky` | bool | Whether the topic is pinned |
+| `approved` | bool | Whether the topic is approved |
+| `id_first_msg`, `id_last_msg` | int | Ids of the first and last message |
+| `body`, `body_raw` | string | Only in the single-resource answer: parsed and raw text |
+
+| Method | Path | Permission / notes |
+| --- | --- | --- |
+| `GET` | `topics` | Lists the topics of every visible board; non-administrators see approved topics only |
+| `GET` | `topics/{id}` | One topic, with its body |
+| `GET` | `boards/{board_id}/topics` | The topics of one board |
+| `POST` | `topics` | `post_new` on the target board; `board`, `subject` and `body` are required; answers `201` |
+| `PUT` | `topics/{id}` | `modify_own` / `modify_any`; `subject` is required |
+| `PATCH` | `topics/{id}` | Same permission; only the supplied fields change |
+| `DELETE` | `topics/{id}` | `remove_own` / `remove_any`; the recycle bin is honoured |
+
+Writable fields: `subject` (required), `body`, `locked`, `is_sticky`, `approved`, `num_views`, `board`. The SMF column names `sticky` and `id_board` are accepted as aliases. Locking needs `lock_own` / `lock_any`, pinning `make_sticky`, approving `approve_posts` and changing the view counter `moderate_board`.
+
+## Posts
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | int | Message id |
+| `topic` | int | Id of the owning topic |
+| `board` | int | Id of the owning board |
+| `subject` | string | Subject |
+| `author` | object | `id`, `name` and `email` of the author |
+| `poster_time` | int | Unix timestamp |
+| `modified_time`, `modified_name`, `modified_reason` | — | Edit stamp |
+| `icon` | string | Message icon |
+| `smileys_enabled` | bool | Whether smileys are enabled |
+| `approved` | bool | Whether the post is approved |
+| `body`, `body_raw` | string | Parsed and raw text |
+
+| Method | Path | Permission / notes |
+| --- | --- | --- |
+| `GET` | `posts/{id}` | One post; non-administrators see approved posts only |
+| `GET` | `topics/{topic_id}/posts` | The posts of one topic |
+| `POST` | `posts` | `post_reply_any` / `post_reply_own`; the body carries `topic` and `body`; answers `201` |
+| `PUT` | `posts/{id}` | `modify_own` / `modify_any`; `body` is required |
+| `PATCH` | `posts/{id}` | Same permission; only the supplied fields change |
+| `DELETE` | `posts/{id}` | `delete_own` / `delete_any`; the opening post of a topic that still has replies cannot be deleted |
+
+Writable fields: `body` (required), `subject`, `icon`, `smileys_enabled`, `approved`, `poster_name`, `poster_email`, `poster_time`, `modified_reason`. The SMF column name `reason` is accepted as an alias for `modified_reason`. Changing `poster_name`, `poster_email` or `poster_time` needs `moderate_forum`; approving a post needs `approve_posts`.
+
+::: note "Replies name their topic in the body"
+`POST /posts` is the only endpoint that takes its parent in the request body instead of the path: the topic id is sent as the `topic` field. A path such as `/topics/{topic_id}/posts` would collide with the reserved `topic` query parameter of SMF.
+:::
+
+## Third-party routes
+
+Routes registered by other mods are addressed exactly like the built-in ones — the version prefix stays part of the URL, the route pattern does not:
+
+```
+index.php?action=api&path=v1/widgets
+```
+
+See [Adding a Resource](/guide/extending/adding-resource) for the registration example.

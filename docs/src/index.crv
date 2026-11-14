@@ -11,11 +11,14 @@ hero:
       text: Get Started
       link: /guide/getting-started
     - theme: alt
+      text: API Reference
+      link: /guide/api-reference
+    - theme: alt
       text: Extending the API
       link: /guide/extending/overview
 features:
   - title: Hooks only
-    details: "No core file edits. The mod registers index.php?action=api and delegates to its own router — keys are managed at Admin → Modification Settings → RESTful API."
+    details: "No core file edits. The mod registers index.php?action=api and delegates to its own router — the API is switched on and its keys are managed at Admin → Configuration → Modifications → RESTful API."
   - title: Full resource coverage
     details: "Categories, members, member groups, boards, topics, and posts with GET/POST/PUT/PATCH/DELETE. Reads use a Query builder with {query_see_board} and pagination; writes use SMF native functions."
   - title: SMF-native authentication
@@ -32,7 +35,9 @@ features:
 
 *SMF RESTful API* is a modification for [SMF 2.1](https://github.com/SimpleMachines/SMF2.1) that layers a full-featured REST interface with JSON responses on top of the engine. The mod registers a single action, `index.php?action=api`, and passes the request to its own router. A resource is addressed as `index.php?action=api;path=v1/members/5`, or, with a rewrite rule in place, as `/api/v1/members/5`.
 
-Use [Getting Started](/guide/getting-started) for the overview, [Clean URLs](/guide/clean-urls) for rewrite rules, and [Extending the API](/guide/extending/overview) for integration hooks.
+The mod ships switched off: enable it and manage its keys at *Admin → Configuration → Modifications → RESTful API*. While it is off, every endpoint answers `503`.
+
+Use [Getting Started](/guide/getting-started) for the overview, the [API Reference](/guide/api-reference) for every endpoint, field and error code, [Clean URLs](/guide/clean-urls) for rewrite rules, and [Extending the API](/guide/extending/overview) for integration hooks.
 
 ::: note "Repository"
 Source code and issue tracker: [github.com/dragomano/smf-restful-api](https://github.com/dragomano/smf-restful-api).

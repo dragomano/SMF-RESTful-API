@@ -11,11 +11,14 @@ hero:
       text: Начало работы
       link: /ru/guide/getting-started
     - theme: alt
+      text: Справочник API
+      link: /ru/guide/api-reference
+    - theme: alt
       text: Расширение API
       link: /ru/guide/extending/overview
 features:
   - title: Только хуки
-    details: "Без правок ядра. Мод регистрирует index.php?action=api и делегирует собственному роутеру — ключи настраиваются в «Админка → Настройки модов → RESTful API»."
+    details: "Без правок ядра. Мод регистрирует index.php?action=api и делегирует собственному роутеру — API включается, а ключи настраиваются в «Админка → Конфигурация → Моды → RESTful API»."
   - title: Полный набор ресурсов
     details: "Категории, пользователи, группы пользователей, разделы, темы и сообщения с GET/POST/PUT/PATCH/DELETE. Чтение через Query с {query_see_board} и пагинацией; запись через штатные функции SMF."
   - title: Аутентификация как в SMF
@@ -33,7 +36,9 @@ features:
 
 *SMF RESTful API* — модификация для форума [SMF 2.1](https://github.com/SimpleMachines/SMF2.1), добавляющая поверх движка полноценный REST-интерфейс с ответами в формате JSON. Мод регистрирует единственное действие `index.php?action=api` и передаёт запрос собственному маршрутизатору. Обращение к ресурсу выглядит как `index.php?action=api;path=v1/members/5`, а при настроенном правиле перезаписи — как `/api/v1/members/5`.
 
-Начните с раздела [Начало работы](/ru/guide/getting-started), затем см. [Чистые URL](/ru/guide/clean-urls) и [Расширение API](/ru/guide/extending/overview).
+Мод поставляется выключенным: включите его и настройте ключи в «Админка → Конфигурация → Моды → RESTful API». Пока мод выключен, любой эндпоинт отвечает `503`.
+
+Начните с раздела [Начало работы](/ru/guide/getting-started), посмотрите [Справочник API](/ru/guide/api-reference) со всеми эндпоинтами, полями и кодами ошибок, затем см. [Чистые URL](/ru/guide/clean-urls) и [Расширение API](/ru/guide/extending/overview).
 
 ::: note "Репозиторий"
 Исходники и трекер задач: [github.com/dragomano/smf-restful-api](https://github.com/dragomano/smf-restful-api).

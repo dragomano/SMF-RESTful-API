@@ -1,0 +1,337 @@
+---
+title: Справочник API
+description: Полный список эндпоинтов SMF RESTful API — методы, пути, требуемые права, изменяемые поля, формат ответа, пагинация и коды ошибок.
+order: 3
+---
+
+{#API-Reference}
+# Справочник API
+
+Все эндпоинты живут под единственным действием SMF `index.php?action=api`, а путь к ресурсу передаётся в параметре `path`:
+
+```
+index.php?action=api;path=v1/members/5
+```
+
+При настроенном правиле перезаписи тот же ресурс адресуется как `/api/v1/members/5` — см. [Чистые URL](/ru/guide/clean-urls). Все пути в таблицах ниже указаны относительно `v1`, то есть полный адрес — `index.php?action=api;path=v1/<path>`.
+
+::: warning "API должен быть включён"
+Мод поставляется выключенным. Включите его в «Админка → Конфигурация → Моды → RESTful API» («Включить API»). Пока мод выключен, любой эндпоинт отвечает `503 Service Unavailable` с кодом ошибки `service_unavailable`.
+:::
+
+{#Request-basics}
+## Основы запроса
+
+{#Authentication}
+### Аутентификация
+
+Любой запрос требует API-ключ; ключ выбирает пользователя, чьи права применяются. Он берётся из первого доступного источника:
+
+1. заголовок `Authorization: Bearer <key>`;
+2. заголовок `X-API-Key: <key>`;
+3. query-параметр `api_key`.
+
+Ключи управляются на странице «Админка → Конфигурация → Моды → RESTful API»: каждый ключ — непрозрачный токен, привязанный к id пользователя. Свою схему вместо штатной см. в разделе [Свои схемы аутентификации](/ru/guide/extending/authentication).
+
+Только полностью активированные аккаунты (`is_activated = 1`) могут работать через API. Отсутствующий, неизвестный или деактивированный ключ даёт `401` с кодом `unauthorized`.
+
+{#Version-prefix}
+### Префикс версии
+
+Первый сегмент пути — версия контракта API. Принимается только `v1`; любой другой даёт `404` с кодом `not_found` и сообщением `Unsupported API version: <сегмент>`.
+
+{#Methods}
+### Методы
+
+Поддерживаются `GET`, `POST`, `PUT`, `PATCH` и `DELETE`. Известный путь с неподдерживаемым методом даёт `405` с кодом `method_not_allowed`.
+
+Клиенты, которые не умеют отправлять verbs кроме `GET` и `POST`, могут переопределить метод заголовком `X-HTTP-Method-Override` или query-параметром `_method`:
+
+```
+POST /index.php?action=api&path=v1/members/5&_method=PATCH
+```
+
+Переопределение учитывается только для запросов `POST`.
+
+{#Request-body}
+### Тело запроса
+
+Тело разбирается как JSON, если заголовок `Content-Type` содержит `application/json`; иначе используется обычная form-encoded полезная нагрузка. Некорректный JSON даёт `400` с кодом `bad_request`.
+
+```json "Тело запроса"
+{
+  "username": "demo",
+  "email": "demo@example.com"
+}
+```
+
+{#Reserved-query-parameters}
+### Зарезервированные query-параметры
+
+SMF резервирует `board`, `topic`, `msg`, `start` и `action` как query-параметры: если передать один из них, ядро отрисует страницу форума вместо обработки `action=api`. Поэтому id родителя передаётся в пути (`/boards/{board_id}/topics`), а не в query-строке. Подробности — в разделе [Добавление ресурса](/ru/guide/extending/adding-resource).
+
+{#Pagination}
+### Пагинация
+
+Коллекции принимают два query-параметра:
+
+- `limit` — размер страницы, от `1` до `100`, по умолчанию `25`;
+- `offset` — смещение от начала, по умолчанию `0`.
+
+Оба значения приводятся к допустимым границам: выход за них не вызывает ошибку, а молча исправляется.
+
+{#Response-format}
+## Формат ответа
+
+{#A-single-resource}
+### Один ресурс
+
+```json "Ответ"
+{
+  "data": {
+    "id": 5,
+    "username": "demo"
+  }
+}
+```
+
+{#A-collection}
+### Коллекция
+
+Коллекции добавляют метаданные пагинации:
+
+```json "Ответ"
+{
+  "data": [
+    { "id": 5, "username": "demo" }
+  ],
+  "meta": {
+    "total": 42,
+    "limit": 25,
+    "offset": 0,
+    "count": 1
+  }
+}
+```
+
+`total` — число подходящих строк, `count` — число строк на этой странице.
+
+{#An-error}
+### Ошибка
+
+```json "Ответ"
+{
+  "error": {
+    "code": "not_found",
+    "message": "Member not found"
+  }
+}
+```
+
+Поле `details` добавляется, если ошибка несёт дополнительные сведения (например, список ошибок регистрации из `POST /members`).
+
+{#Status-codes}
+### Коды статуса
+
+| Код | Значение |
+| --- | --- |
+| `200` | Запрос выполнен успешно, в теле — `data` |
+| `201` | Ресурс создан |
+| `204` | Запрос выполнен успешно без тела (операции `DELETE`) |
+| `400` | Запрос некорректен или поле имеет неверное значение (`bad_request`) |
+| `401` | Ключ отсутствует, неизвестен или принадлежит деактивированному аккаунту (`unauthorized`) |
+| `403` | У пользователя нет прав на операцию (`forbidden`) |
+| `404` | Ресурс или эндпоинт не существует (`not_found`) |
+| `405` | Путь существует, но не для этого метода (`method_not_allowed`) |
+| `429` | Срабатывает ограничение частоты от стороннего хука (`too_many_requests`) |
+| `500` | Непредвиденная ошибка; она пишется в лог (`internal_error`) |
+| `503` | API выключен (`service_unavailable`) |
+
+{#Headers}
+### Заголовки
+
+Любой ответ отправляется как `Content-Type: application/json; charset=utf-8` с заголовком `X-Content-Type-Options: nosniff`. Дополнительные заголовки можно добавить через хук `integrate_api_pre_send`.
+
+{#Categories}
+## Категории
+
+::: tip "Обязательные поля"
+В списках полей ниже поле, помеченное как обязательное, требуется при полной замене (`PUT`). При создании (`POST`) требуются только те поля, которые проверяет сам эндпоинт — обычно имя, а для разделов ещё и родительская категория.
+:::
+
+| Поле | Тип | Примечание |
+| --- | --- | --- |
+| `id` | int | id категории |
+| `name` | string | Название |
+| `description` | string | Описание |
+| `order` | int | Позиция среди категорий (с нуля) |
+| `can_collapse` | bool | Сворачивается ли категория |
+
+| Метод | Путь | Права / примечания |
+| --- | --- | --- |
+| `GET` | `categories` | Категории, в которых есть хотя бы один видимый пользователю раздел |
+| `GET` | `categories/{id}` | Одна категория; в ответе есть её видимые разделы в `boards` |
+| `GET` | `categories/{cat_id}/boards` | Разделы одной категории |
+| `POST` | `categories` | `manage_boards`; обязательно `name`; ответ `201` |
+| `PUT` | `categories/{id}` | `manage_boards`; обязательны `name` и `description` |
+| `PATCH` | `categories/{id}` | `manage_boards`; меняются только присланные поля |
+| `DELETE` | `categories/{id}` | `manage_boards`; разделы переезжают в `?move_boards_to=<id>` или удаляются вместе с категорией |
+
+Изменяемые поля: `name` (обязательное), `description` (обязательное), `order`, `can_collapse`. Вместо `order` принимается и имя колонки SMF `cat_order`.
+
+{#Boards}
+## Разделы
+
+| Поле | Тип | Примечание |
+| --- | --- | --- |
+| `id` | int | id раздела |
+| `category` | int | id родительской категории |
+| `parent` | int | id родительского раздела, `0` для корневого |
+| `name` | string | Название |
+| `description` | string | Описание |
+| `num_topics` | int | Число тем |
+| `num_posts` | int | Число сообщений |
+| `order` | int | Позиция среди соседних разделов (с нуля) |
+
+| Метод | Путь | Права / примечания |
+| --- | --- | --- |
+| `GET` | `boards` | Разделы, видимые пользователю |
+| `GET` | `boards/{id}` | Один раздел |
+| `GET` | `boards/{board_id}/topics` | Темы одного раздела |
+| `POST` | `boards` | `manage_boards`; обязательны `name` и `category`; ответ `201` |
+| `PUT` | `boards/{id}` | `manage_boards`; обязательны `name` и `description` |
+| `PATCH` | `boards/{id}` | `manage_boards`; меняются только присланные поля |
+| `DELETE` | `boards/{id}` | `manage_boards`; дочерние разделы переезжают в `?move_children_to=<id>` или удаляются вместе с разделом |
+
+Изменяемые поля: `name` (обязательное), `description` (обязательное), `category`, `parent`, `order`, `id_profile`, `id_theme`, `override_theme`, `count_posts`, `member_groups`, `deny_member_groups`, `redirect`. Имена колонок SMF `id_cat`, `id_parent` и `board_order` принимаются как псевдонимы. Родительский раздел должен быть в той же категории, что и сам раздел.
+
+{#Members}
+## Пользователи
+
+| Поле | Тип | Примечание |
+| --- | --- | --- |
+| `id` | int | id пользователя |
+| `username` | string | Логин |
+| `name` | string | Отображаемое имя |
+| `posts` | int | Число сообщений |
+| `date_registered` | int | Unix-время регистрации |
+| `last_login` | int | Unix-время последнего входа |
+| `primary_group` | int | id основной группы |
+| `post_group` | int | id пост-группы |
+| `additional_groups` | string | id дополнительных групп через запятую |
+| `email` | string | Только для администраторов |
+| `personal_text`, `signature`, `birthdate`, `website_title`, `website_url`, `usertitle`, `avatar`, `show_online`, `time_format`, `timezone`, `time_offset`, `id_theme`, `lngfile`, `smiley_set`, `pm_receive_from`, `warning`, `ignore_boards`, `secret_question`, `is_activated` | — | Только для администраторов и только в ответе на один ресурс |
+
+| Метод | Путь | Права / примечания |
+| --- | --- | --- |
+| `GET` | `members` | `view_mlist`; список активированных пользователей |
+| `GET` | `members/{id}` | Один пользователь; приватные поля добавляются для администраторов |
+| `POST` | `members` | `moderate_forum`; обязательны `username` и `email`; ответ `201` |
+| `PUT` | `members/{id}` | `profile_identity_own` для себя, `profile_identity_any` для других; обязательны `username`, `name` и `email` |
+| `PATCH` | `members/{id}` | Те же права; меняются только присланные поля |
+| `DELETE` | `members/{id}` | `profile_remove_own` для себя, `profile_remove_any` для других; администратора удаляет только администратор |
+
+Изменяемые поля: `username` (обязательное), `name` (обязательное), `email` (обязательное), `password`, `primary_group`, `post_group`, `additional_groups`, `posts`, `personal_text`, `signature`, `birthdate`, `website_title`, `website_url`, `usertitle`, `avatar`, `show_online`, `time_format`, `timezone`, `time_offset`, `id_theme`, `lngfile`, `smiley_set`, `pm_receive_from`, `warning`, `ignore_boards`, `is_activated`, `secret_question`, `secret_answer`. Имена колонок SMF `member_name`, `real_name`, `email_address`, `passwd`, `id_group` и `id_post_group` принимаются как псевдонимы.
+
+Смена групп требует `manage_membergroups`; смена `posts`, `warning`, `is_activated`, `secret_question` или `secret_answer` — `moderate_forum`. Смена пароля другого пользователя — `moderate_forum`.
+
+{#Member-groups}
+## Группы пользователей
+
+| Поле | Тип | Примечание |
+| --- | --- | --- |
+| `id` | int | id группы |
+| `name` | string | Название |
+| `description` | string | Описание |
+| `type` | int | `0` приватная, `1` защищённая, `2` запрашиваемая, `3` свободная |
+| `min_posts` | int | Порог постов; `-1` означает «не по пост-критерию» |
+| `max_messages` | int | Лимит сообщений |
+| `color` | string | Цвет группы в списке пользователей онлайн |
+| `icons` | string | Иконки группы |
+| `hidden` | int | `1`, если группа скрыта |
+| `parent` | int | id родительской группы |
+| `tfa_required` | bool | Требуется ли двухфакторная аутентификация |
+
+| Метод | Путь | Права / примечания |
+| --- | --- | --- |
+| `GET` | `groups` | Скрытые группы видны только при `manage_membergroups`, группа модераторов — только администраторам |
+| `GET` | `groups/{id}` | Одна группа с теми же правилами видимости |
+| `POST` | `groups` | `manage_membergroups`; обязательно `name`; ответ `201` |
+| `PUT` | `groups/{id}` | `manage_membergroups`; обязательны `name`, `description`, `type`, `min_posts` и `max_messages` |
+| `PATCH` | `groups/{id}` | `manage_membergroups`; меняются только присланные поля |
+| `DELETE` | `groups/{id}` | `manage_membergroups`; группа, используемая платной подпиской, удалению не подлежит |
+
+Изменяемые поля: `name` (обязательное), `description` (обязательное), `type` (обязательное), `min_posts` (обязательное), `max_messages` (обязательное), `color`, `icons`, `hidden`, `parent`, `tfa_required`. Имена колонок SMF `group_name`, `group_type`, `online_color` и `id_parent` принимаются как псевдонимы. Защищённые группы (`type = 1`) может создавать, менять и удалять только администратор.
+
+{#Topics}
+## Темы
+
+| Поле | Тип | Примечание |
+| --- | --- | --- |
+| `id` | int | id темы |
+| `board` | int | id раздела |
+| `subject` | string | Заголовок первого сообщения |
+| `starter` | object | `id` и `name` автора темы |
+| `poster_time` | int | Unix-время первого сообщения |
+| `num_replies` | int | Число ответов |
+| `num_views` | int | Число просмотров |
+| `locked` | bool | Закрыта ли тема |
+| `is_sticky` | bool | Закреплена ли тема |
+| `approved` | bool | Одобрена ли тема |
+| `id_first_msg`, `id_last_msg` | int | id первого и последнего сообщений |
+| `body`, `body_raw` | string | Только в ответе на один ресурс: разобранный и исходный текст |
+
+| Метод | Путь | Права / примечания |
+| --- | --- | --- |
+| `GET` | `topics` | Темы всех видимых разделов; не-администраторы видят только одобренные |
+| `GET` | `topics/{id}` | Одна тема вместе с текстом |
+| `GET` | `boards/{board_id}/topics` | Темы одного раздела |
+| `POST` | `topics` | `post_new` в целевом разделе; обязательны `board`, `subject` и `body`; ответ `201` |
+| `PUT` | `topics/{id}` | `modify_own` / `modify_any`; обязательно `subject` |
+| `PATCH` | `topics/{id}` | Те же права; меняются только присланные поля |
+| `DELETE` | `topics/{id}` | `remove_own` / `remove_any`; корзина учитывается |
+
+Изменяемые поля: `subject` (обязательное), `body`, `locked`, `is_sticky`, `approved`, `num_views`, `board`. Имена колонок SMF `sticky` и `id_board` принимаются как псевдонимы. Закрытие требует `lock_own` / `lock_any`, закрепление — `make_sticky`, одобрение — `approve_posts`, смена счётчика просмотров — `moderate_board`.
+
+{#Posts}
+## Сообщения
+
+| Поле | Тип | Примечание |
+| --- | --- | --- |
+| `id` | int | id сообщения |
+| `topic` | int | id темы |
+| `board` | int | id раздела |
+| `subject` | string | Заголовок |
+| `author` | object | `id`, `name` и `email` автора |
+| `poster_time` | int | Unix-время |
+| `modified_time`, `modified_name`, `modified_reason` | — | Отметка о правке |
+| `icon` | string | Иконка сообщения |
+| `smileys_enabled` | bool | Включены ли смайлы |
+| `approved` | bool | Одобрено ли сообщение |
+| `body`, `body_raw` | string | Разобранный и исходный текст |
+
+| Метод | Путь | Права / примечания |
+| --- | --- | --- |
+| `GET` | `posts/{id}` | Одно сообщение; не-администраторы видят только одобренные |
+| `GET` | `topics/{topic_id}/posts` | Сообщения одной темы |
+| `POST` | `posts` | `post_reply_any` / `post_reply_own`; в теле — `topic` и `body`; ответ `201` |
+| `PUT` | `posts/{id}` | `modify_own` / `modify_any`; обязательно `body` |
+| `PATCH` | `posts/{id}` | Те же права; меняются только присланные поля |
+| `DELETE` | `posts/{id}` | `delete_own` / `delete_any`; первое сообщение темы, у которой ещё есть ответы, удалить нельзя |
+
+Изменяемые поля: `body` (обязательное), `subject`, `icon`, `smileys_enabled`, `approved`, `poster_name`, `poster_email`, `poster_time`, `modified_reason`. Имя колонки SMF `reason` принимается как псевдоним для `modified_reason`. Смена `poster_name`, `poster_email` или `poster_time` требует `moderate_forum`, одобрение сообщения — `approve_posts`.
+
+::: note "Ответ указывает тему в теле"
+`POST /posts` — единственный эндпоинт, который берёт родителя из тела запроса, а не из пути: id темы передаётся полем `topic`. Путь вида `/topics/{topic_id}/posts` столкнулся бы с зарезервированным query-параметром SMF `topic`.
+:::
+
+{#Third-party-routes}
+## Маршруты сторонних модов
+
+Маршруты, зарегистрированные другими модами, адресуются так же, как встроенные: префикс версии остаётся частью URL, а в паттерн маршрута его нет:
+
+```
+index.php?action=api&path=v1/widgets
+```
+
+Пример регистрации — в разделе [Добавление ресурса](/ru/guide/extending/adding-resource).

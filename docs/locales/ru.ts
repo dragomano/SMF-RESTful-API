@@ -18,6 +18,7 @@ const ru: LocaleConfig = {
           items: [
             { text: 'Начало работы', link: '/ru/guide/getting-started' },
             { text: 'Чистые URL', link: '/ru/guide/clean-urls' },
+            { text: 'Справочник API', link: '/ru/guide/api-reference' },
           ],
         },
         {

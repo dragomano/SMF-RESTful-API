@@ -32,3 +32,9 @@ The `^~` modifier gives this block priority over the general `location ~ \.php$`
 ::: tip "Direct address always works"
 You can skip rewrite rules entirely and use `index.php?action=api;path=v1/members/5` (or `index.php?action=api&path=v1/members/5` depending on your separator style).
 :::
+
+::: warning "The Authorization header has to reach PHP"
+Some server setups strip the `Authorization` header before it reaches PHP — Apache with CGI does it, and it also breaks when the request passes through a proxy. The mod reads the stripped header from `REDIRECT_HTTP_AUTHORIZATION` as well, so it usually works out of the box. If authentication fails with a valid key, forward the header explicitly (for Apache: `CGIPassAuth On` or `SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1`).
+:::
+
+The path is also read from `PATH_INFO` when the `path` parameter is missing, so a rewrite rule that only rewrites the URL — without passing the path as a parameter — works as well.

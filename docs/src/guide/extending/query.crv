@@ -1,6 +1,6 @@
 ---
 title: Query & Controller
-description: Query fluent builder, fetch modes (paginate/first/exists/fetchAll), and the full AbstractController helper surface including writable, boolean, and transform.
+description: Query fluent builder, fetch modes (paginate/first/exists/fetchAll), and the full AbstractController helper surface including writableColumns, boolean and transform.
 order: 3
 ---
 
@@ -12,9 +12,11 @@ order: 3
 
 - `->from()` (with JOINs)
 - `->where()`
-- `->columns()`
+- `->columns()` (default `*`)
 - `->orderBy()`
 - `->params()` (the `{int:...}`, `{query_see_board}`, etc. placeholders)
+
+The builder itself can also run a query: `first()`, `exists()`, `fetchAll()` and `fetchPage($limit, $offset)` — the last one returns the page rows together with the grand total.
 
 ## Running via the controller helpers
 
@@ -25,17 +27,52 @@ order: 3
 
 ## What's available in the controller
 
-- `$this->request` — the `Request` object (method, segments, query, body, headers).
+- `$this->request` — the `Request` object. It is read through accessors, not through public properties: `getMethod()`, `getSegments()`, `segment($index)`, `header($name)`, `query($name)`, `input($name)` and `all()` (the whole decoded body).
 - `$this->response()` — a new `Response` (`->data()`, `->collection()`, `->status()`, `->header()`, `->error()`).
 - `$this->paginate($query)` / `$this->first($query)` / `$this->exists($query)` / `$this->fetchAll($query)` — run a `Query`.
 - `$this->transform($row)` — the output shape of a row; override it for your own resource (by default it returns the row as is).
-- `$this->id($params)` — the integer `{id}`, validated.
-- `$this->pagination()` — `[limit, offset]` with sensible bounds (called inside `paginate()`).
+- `$this->id($params)` — the integer `{id}`, validated; a second argument reads another path parameter, e.g. `$this->id($params, 'parent_id')`.
+- `$this->pagination()` — `[limit, offset]` with sensible bounds (`limit` 1–100, default 25; `offset` default 0).
 - `$this->cleanString($value)` — a safe string from the request body.
-- `$this->writable($fields, $full)` — collect writable fields from the body: with `$full = true` (PUT) it requires every field in `$fields`, with `false` (PATCH) it keeps only the ones sent (an empty PATCH → 400).
+- `$this->writableColumns($schema, $full, $aliases)` — collect writable fields from the body; with `$full = true` (PUT) it requires every field in `$schema` that is not marked `optional`, with `false` (PATCH) it keeps only the ones sent (an empty PATCH → 400).
 - `$this->boolean($value)` — coerce a body value to `bool` (accepts `true/false`, `1/0`, `"yes"/"no"`, `"on"/"off"`).
 - `$this->noContent()` — an empty `204` response for successful operations without a body (usually `DELETE`).
 - identity and permissions come from the global `$user_info` (set up by the `Authenticator`), and checks use the native `allowedTo()` / `$user_info['is_admin']`.
+
+### The writable field schema
+
+`writableColumns()` maps the body onto SMF columns through a schema — field name => description. Here is the schema of the built-in `categories` resource, so it can be compared with `CategoryController`:
+
+```php "schema"
+private const WRITABLE = [
+	'name'         => ['type' => 'string', 'column' => 'name', 'length' => 255],
+	'description'  => ['type' => 'raw', 'column' => 'description'],
+	'order'        => ['type' => 'int', 'column' => 'cat_order', 'optional' => true],
+	'can_collapse' => ['type' => 'bool', 'column' => 'can_collapse', 'optional' => true],
+];
+```
+
+| Key | Meaning |
+| --- | --- |
+| `type` | `string`, `raw`, `int`, `float`, `bool`, `email`, `date` or `int_list` |
+| `column` | The SMF column to write; defaults to the field name |
+| `min`, `max` | Bounds for integer fields; the default lower bound is `0`, and negative bounds allow negative values |
+| `clamp` | Pin the value to the bound instead of rejecting it (SMF treats `min_posts = -1` as "not post-based") |
+| `length` | Maximum length in characters for `string` and `raw` fields |
+| `optional` | Accepted, but not required by a full replace |
+
+The value types behave like this:
+
+- `string` — trimmed and escaped with `htmlspecialchars()`;
+- `raw` — trimmed, but kept as it is (message bodies, signatures, descriptions);
+- `int` — a whole number inside the given bounds; decimals, leading zeros (`01`) and values with trailing characters are rejected;
+- `float` — a number rounded to two decimals (SMF stores time offsets as floats);
+- `bool` — `true`, `1`, `"yes"` or `"on"` are true, everything else is false;
+- `email` — validated as an email address;
+- `date` — `YYYY-MM-DD`; an empty value becomes SMF's "not set" date `1004-01-01`;
+- `int_list` — a list of ids, given as `"2,7"` or `[2, 7]`, stored as `"2,7"`.
+
+The third argument of `writableColumns()` is a list of aliases: SMF column names that clients may use instead of the field names, e.g. `['id_cat' => 'category']`. The alias is only used when the field itself was not sent.
 
 ::: warning "Writes go through SMF native functions"
 For mutating actions (`PUT` / `PATCH` / `DELETE`), perform the write through SMF's native functions (`modifyBoard`, `deleteMembers`, `modifyPost`, and so on) — `Query` is read-only. *Check permissions yourself* with `allowedTo()` before calling these functions and throw an `ApiException`: on denial, many core functions terminate the request with a fatal HTML error rather than JSON.

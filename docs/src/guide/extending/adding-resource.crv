@@ -49,6 +49,8 @@ public function routes(\SMF\API\Router $router): void
 }
 ```
 
+The path parameters arrive as strings; validate them with `$this->id($params)` before using them in a query. Besides the verb helpers, `Router::add($method, $pattern, $class, $action)` registers a route for any other verb.
+
 ::: note "Version prefix"
 Routes are registered *without* a version prefix. The leading version segment (`v1`) is stripped and validated by the `Router` itself, so the patterns stay version-agnostic. The client addresses the resource as `index.php?action=api&path=v1/widgets`.
 :::
@@ -117,3 +119,7 @@ class WidgetController extends AbstractController
 ```
 
 See [Query & Controller](/guide/extending/query) for the full reference of `Query` and `AbstractController` helpers.
+
+::: tip "What a controller action returns"
+An action should return a `Response` — `$this->response()->data(...)` for a single resource, `$this->paginate($query)` for a collection, `$this->noContent()` for an empty `204`. A plain array works too: the router wraps it into `data`. Anything you throw as an `ApiException` becomes a JSON error with the matching status code.
+:::

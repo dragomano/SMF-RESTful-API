@@ -18,6 +18,7 @@ const en: LocaleConfig = {
           items: [
             { text: 'Getting Started', link: '/guide/getting-started' },
             { text: 'Clean URLs', link: '/guide/clean-urls' },
+            { text: 'API Reference', link: '/guide/api-reference' },
           ],
         },
         {
