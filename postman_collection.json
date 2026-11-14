@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "3f6c2e10-5a4b-4c2d-9e7a-1b2c3d4e5f60",
 		"name": "SMF RESTful API",
-		"description": "Collection for the SMF RESTful API mod (index.php?action=api).\n\nSet the collection variables `base_url` and `api_key` on the Variables tab. This collection is one end-to-end scenario: run it whole with Postman's Collection Runner (\"Run collection\") and it walks the full lifecycle in order - create category -> board -> topic -> reply, plus a throwaway member; inspects and edits each; then tears everything down child-first (post -> topic -> board -> category -> member).\n\nSAFETY: every editing/deleting request works only on data this run created. Each \"Create ...\" stores the new id into a collection variable (`category_id`, `board_id`, `member_id`, `topic_id`, `post_id`); Get/Update/Replace/Delete read that variable. The id variables start EMPTY and every mutating request has a pre-request guard that aborts the send if its id is still empty - so a delete can never hit a pre-existing forum item, even if a Create was skipped or failed. The api_key must belong to a member allowed to manage boards, moderate the forum and post.",
+		"description": "Collection for the SMF RESTful API mod (index.php?action=api).\n\nSet the collection variables `base_url` and `api_key` on the Variables tab. This collection is one end-to-end scenario: run it whole with Postman's Collection Runner (\"Run collection\") and it walks the full lifecycle in order - create category -> board -> topic -> reply, plus a throwaway member and member group; inspects and edits each; then tears everything down child-first (post -> topic -> board -> category -> member -> member group).\n\nSAFETY: every editing/deleting request works only on data this run created. Each \"Create ...\" stores the new id into a collection variable (`category_id`, `board_id`, `member_id`, `group_id`, `topic_id`, `post_id`); Get/Update/Replace/Delete read that variable. The id variables start EMPTY and every mutating request has a pre-request guard that aborts the send if its id is still empty - so a delete can never hit a pre-existing forum item, even if a Create was skipped or failed. The api_key must belong to a member allowed to manage boards, moderate the forum, manage member groups and post.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"auth": {
@@ -51,6 +51,7 @@
 		{ "key": "category_id", "value": "", "type": "string" },
 		{ "key": "board_id", "value": "", "type": "string" },
 		{ "key": "member_id", "value": "", "type": "string" },
+		{ "key": "group_id", "value": "", "type": "string" },
 		{ "key": "topic_id", "value": "", "type": "string" },
 		{ "key": "post_id", "value": "", "type": "string" },
 		{ "key": "rand", "value": "", "type": "string" }
@@ -436,6 +437,123 @@
 						},
 						"url": "{{base_url}}/index.php?action=api&path=v1/members/{{member_id}}",
 						"description": "Fully replace the created member's editable profile (name and email both required)."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Groups",
+			"item": [
+				{
+					"name": "Create group",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j && j.data && j.data.id) {",
+									"    pm.collectionVariables.set('group_id', String(j.data.id));",
+									"    console.log('Saved group_id =', j.data.id);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"api-group-{{rand}}\",\n  \"description\": \"Created by the RESTful API collection\",\n  \"type\": 0,\n  \"min_posts\": -1,\n  \"max_messages\": 50,\n  \"color\": \"#3366cc\",\n  \"icons\": \"1#icon.png\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": "{{base_url}}/index.php?action=api&path=v1/groups",
+						"description": "Create a throwaway member group. Requires manage_membergroups; type 1 (protected) also requires admin_forum. Saves the new id into group_id."
+					},
+					"response": []
+				},
+				{
+					"name": "Get group",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{base_url}}/index.php?action=api&path=v1/groups/{{group_id}}",
+						"description": "The member group just created (uses group_id). Hidden groups are only visible to member group managers."
+					},
+					"response": []
+				},
+				{
+					"name": "List groups",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{base_url}}/index.php?action=api&path=v1/groups&limit=25&offset=0",
+						"description": "Paginated member group list. Regular members only see visible groups; member group managers also see hidden groups."
+					},
+					"response": []
+				},
+				{
+					"name": "Update group (PATCH)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.collectionVariables.get('group_id')) {",
+									"    throw new Error('group_id is empty - run \"Create group\" first. Refusing to touch an existing forum group.');",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"api-group-{{rand}}-patched\",\n  \"max_messages\": 60\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": "{{base_url}}/index.php?action=api&path=v1/groups/{{group_id}}",
+						"description": "Partially update the created member group. Requires manage_membergroups."
+					},
+					"response": []
+				},
+				{
+					"name": "Replace group (PUT)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.collectionVariables.get('group_id')) {",
+									"    throw new Error('group_id is empty - run \"Create group\" first. Refusing to touch an existing forum group.');",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"api-group-{{rand}}-put\",\n  \"description\": \"Replaced by the RESTful API collection\",\n  \"type\": 0,\n  \"min_posts\": -1,\n  \"max_messages\": 0,\n  \"color\": \"#9933cc\",\n  \"icons\": \"1#icon.png\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": "{{base_url}}/index.php?action=api&path=v1/groups/{{group_id}}",
+						"description": "Fully replace the created member group. PUT requires name, description, type, min_posts, max_messages, color and icons."
 					},
 					"response": []
 				}
@@ -854,6 +972,38 @@
 						"header": [],
 						"url": "{{base_url}}/index.php?action=api&path=v1/members/{{member_id}}",
 						"description": "Delete the throwaway member. Needs profile_remove_any (profile_remove_own for yourself); only admins may delete admins. Clears member_id."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete group",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (!pm.collectionVariables.get('group_id')) {",
+									"    throw new Error('group_id is empty - run \"Create group\" first. Refusing to delete an existing forum group.');",
+									"}"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.collectionVariables.set('group_id', '');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": "{{base_url}}/index.php?action=api&path=v1/groups/{{group_id}}",
+						"description": "Delete the created member group. SMF moves its members back to the regular group and removes the group permissions. Clears group_id."
 					},
 					"response": []
 				}

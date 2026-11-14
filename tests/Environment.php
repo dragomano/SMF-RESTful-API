@@ -203,6 +203,22 @@ if (! function_exists('deleteMembers')) {
     }
 }
 
+if (! function_exists('updateStats')) {
+    function updateStats(string $type = '', $members = null): void
+    {
+        $GLOBALS['api_update_stats'][] = [$type, $members];
+    }
+}
+
+if (! function_exists('deleteMembergroups')) {
+    function deleteMembergroups($groups)
+    {
+        $GLOBALS['api_delete_membergroups'][] = $groups;
+
+        return $GLOBALS['api_delete_membergroups_result'] ?? true;
+    }
+}
+
 if (! function_exists('createPost')) {
     function createPost(array &$msgOptions, array &$topicOptions, array &$posterOptions): bool
     {
@@ -270,25 +286,28 @@ final class Environment
         $GLOBALS['api_permissions'] = [];
 
         // Recorders populated by the stubs above.
-        $GLOBALS['api_hooks']             = [];
-        $GLOBALS['api_hook_calls']        = [];
-        $GLOBALS['api_languages_loaded']  = [];
-        $GLOBALS['api_templates_loaded']  = [];
-        $GLOBALS['api_queries']           = [];
-        $GLOBALS['api_create_category']   = [];
-        $GLOBALS['api_modify_category']   = [];
-        $GLOBALS['api_delete_categories'] = [];
-        $GLOBALS['api_create_board']      = [];
-        $GLOBALS['api_modify_board']      = [];
-        $GLOBALS['api_delete_boards']     = [];
-        $GLOBALS['api_register']          = [];
-        $GLOBALS['api_update_member']     = [];
-        $GLOBALS['api_delete_members']    = [];
-        $GLOBALS['api_create_post']       = [];
-        $GLOBALS['api_modify_post']       = [];
-        $GLOBALS['api_preparsecode']      = [];
-        $GLOBALS['api_remove_topics']     = [];
-        $GLOBALS['api_remove_message']    = [];
+        $GLOBALS['api_hooks']               = [];
+        $GLOBALS['api_hook_calls']          = [];
+        $GLOBALS['api_languages_loaded']    = [];
+        $GLOBALS['api_templates_loaded']    = [];
+        $GLOBALS['api_queries']             = [];
+        $GLOBALS['api_db_insert']           = [];
+        $GLOBALS['api_create_category']     = [];
+        $GLOBALS['api_modify_category']     = [];
+        $GLOBALS['api_delete_categories']   = [];
+        $GLOBALS['api_create_board']        = [];
+        $GLOBALS['api_modify_board']        = [];
+        $GLOBALS['api_delete_boards']       = [];
+        $GLOBALS['api_register']            = [];
+        $GLOBALS['api_update_member']       = [];
+        $GLOBALS['api_delete_members']      = [];
+        $GLOBALS['api_delete_membergroups'] = [];
+        $GLOBALS['api_update_stats']        = [];
+        $GLOBALS['api_create_post']         = [];
+        $GLOBALS['api_modify_post']         = [];
+        $GLOBALS['api_preparsecode']        = [];
+        $GLOBALS['api_remove_topics']       = [];
+        $GLOBALS['api_remove_message']      = [];
 
         // Database fakes: rows feed db_fetch_assoc (FIFO), api_total feeds the
         // COUNT read, and api_num_rows(_queue) drives EXISTS checks.
@@ -299,11 +318,12 @@ final class Environment
         $GLOBALS['api_free_result']    = 0;
 
         // Return values for the SMF mutation helpers.
-        $GLOBALS['api_new_id']             = 10;
-        $GLOBALS['api_new_msg_id']         = 500;
-        $GLOBALS['api_new_topic_id']       = 300;
-        $GLOBALS['api_create_post_result'] = true;
-        $GLOBALS['api_register_result']    = 0;
+        $GLOBALS['api_new_id']                     = 10;
+        $GLOBALS['api_new_msg_id']                 = 500;
+        $GLOBALS['api_new_topic_id']               = 300;
+        $GLOBALS['api_create_post_result']         = true;
+        $GLOBALS['api_register_result']            = 0;
+        $GLOBALS['api_delete_membergroups_result'] = true;
 
         unset($GLOBALS['api_auth_hook_id'], $GLOBALS['api_check_session'], $GLOBALS['api_updated_settings'], $GLOBALS['api_routes_hook']);
 
@@ -312,6 +332,16 @@ final class Environment
                 $GLOBALS['api_queries'][] = ['query' => $query, 'params' => $params];
 
                 return new \stdClass();
+            },
+            'db_insert' => static function (string $method, string $table, array $columns, array $data, array $keys = [], int $returnmode = 0) {
+                $GLOBALS['api_db_insert'][] = [
+                    'table'   => $table,
+                    'columns' => $columns,
+                    'data'    => $data,
+                    'keys'    => $keys,
+                ];
+
+                return $GLOBALS['api_new_id'] ?? 10;
             },
             'db_fetch_assoc' => static function ($request = null): ?array {
                 return array_shift($GLOBALS['api_rows']) ?: null;
@@ -418,7 +448,7 @@ final class Environment
             mkdir($dir, 0777, true);
         }
 
-        foreach (['Subs-Categories.php', 'Subs-Boards.php', 'Subs-Members.php', 'Subs-Post.php', 'RemoveTopic.php'] as $file) {
+        foreach (['Subs-Categories.php', 'Subs-Boards.php', 'Subs-Members.php', 'Subs-Membergroups.php', 'Subs-Post.php', 'RemoveTopic.php'] as $file) {
             $path = $dir . '/' . $file;
 
             if (! is_file($path)) {

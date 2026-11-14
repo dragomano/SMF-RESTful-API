@@ -12,7 +12,7 @@ order: 1
 {#Resources-and-operations}
 ## Ресурсы и операции
 
-Из коробки доступны ресурсы `categories`, `members`, `boards`, `topics` и `posts` с операциями чтения (`GET`) и изменения (`POST` / `PUT` / `PATCH` / `DELETE`).
+Из коробки доступны ресурсы `categories`, `members`, `groups`, `boards`, `topics` и `posts` с операциями чтения (`GET`) и изменения (`POST` / `PUT` / `PATCH` / `DELETE`).
 
 - Чтение идёт через лёгкий построитель запросов `Query` с учётом видимости разделов (`{query_see_board}`) и постраничной выдачей.
 - Запись — через штатные функции SMF (`createBoard`, `modifyBoard`, `deleteBoards` и т. п.), поэтому права и бизнес-логика ядра соблюдаются.

@@ -15,6 +15,7 @@ namespace SMF\API;
 
 use SMF\API\Controllers\BoardController;
 use SMF\API\Controllers\CategoryController;
+use SMF\API\Controllers\GroupController;
 use SMF\API\Controllers\MemberController;
 use SMF\API\Controllers\PostController;
 use SMF\API\Controllers\TopicController;
@@ -145,6 +146,13 @@ class Router
 		$this->put('members/{id}', MemberController::class, 'replace');
 		$this->patch('members/{id}', MemberController::class, 'update');
 		$this->delete('members/{id}', MemberController::class, 'destroy');
+
+		$this->get('groups', GroupController::class, 'index');
+		$this->get('groups/{id}', GroupController::class, 'show');
+		$this->post('groups', GroupController::class, 'store');
+		$this->put('groups/{id}', GroupController::class, 'replace');
+		$this->patch('groups/{id}', GroupController::class, 'update');
+		$this->delete('groups/{id}', GroupController::class, 'destroy');
 
 		$this->get('boards', BoardController::class, 'index');
 		$this->get('boards/{id}', BoardController::class, 'show');

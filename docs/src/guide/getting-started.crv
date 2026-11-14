@@ -10,7 +10,7 @@ order: 1
 
 ## Resources and operations
 
-Out of the box you get the `categories`, `members`, `boards`, `topics`, and `posts` resources with read (`GET`) and write (`POST` / `PUT` / `PATCH` / `DELETE`) operations.
+Out of the box you get the `categories`, `members`, `groups`, `boards`, `topics`, and `posts` resources with read (`GET`) and write (`POST` / `PUT` / `PATCH` / `DELETE`) operations.
 
 - Reads go through a lightweight `Query` builder that respects board visibility (`{query_see_board}`) and paginates results.
 - Writes go through SMF's native functions (`createBoard`, `modifyBoard`, `deleteBoards`, and so on), so the core's permissions and business logic are honored.

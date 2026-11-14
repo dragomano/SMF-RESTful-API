@@ -5,7 +5,7 @@ layout: home
 hero:
   name: SMF RESTful API
   text: RESTful JSON API for SMF 2.1
-  tagline: A hooks-only SMF modification that exposes categories, members, boards, topics, and posts over a REST interface with proper permission checks.
+  tagline: A hooks-only SMF modification that exposes categories, members, member groups, boards, topics, and posts over a REST interface with proper permission checks.
   actions:
     - theme: brand
       text: Get Started
@@ -17,7 +17,7 @@ features:
   - title: Hooks only
     details: "No core file edits. The mod registers index.php?action=api and delegates to its own router — keys are managed at Admin → Modification Settings → RESTful API."
   - title: Full resource coverage
-    details: "Categories, members, boards, topics, and posts with GET/POST/PUT/PATCH/DELETE. Reads use a Query builder with {query_see_board} and pagination; writes use SMF native functions."
+    details: "Categories, members, member groups, boards, topics, and posts with GET/POST/PUT/PATCH/DELETE. Reads use a Query builder with {query_see_board} and pagination; writes use SMF native functions."
   - title: SMF-native authentication
     details: "API key via Authorization: Bearer, X-API-Key, or api_key parameter. After authentication the full SMF user context ($user_info, allowedTo(), {query_see_board}) is restored."
   - title: Clean URLs optional

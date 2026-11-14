@@ -5,6 +5,7 @@ declare(strict_types=1);
 use SMF\API\ApiException;
 use SMF\API\Controllers\BoardController;
 use SMF\API\Controllers\CategoryController;
+use SMF\API\Controllers\GroupController;
 use SMF\API\Controllers\MemberController;
 use SMF\API\Controllers\PostController;
 use SMF\API\Controllers\TopicController;
@@ -138,6 +139,7 @@ final class RouterTest
         $cat    = CategoryController::class;
         $board  = BoardController::class;
         $member = MemberController::class;
+        $group  = GroupController::class;
         $topic  = TopicController::class;
         $post   = PostController::class;
 
@@ -154,6 +156,12 @@ final class RouterTest
         yield 'PUT members/{id}'          => ['PUT', 'v1/members/5', $member, 'replace', ['id' => '5']];
         yield 'PATCH members/{id}'        => ['PATCH', 'v1/members/5', $member, 'update', ['id' => '5']];
         yield 'DELETE members/{id}'       => ['DELETE', 'v1/members/5', $member, 'destroy', ['id' => '5']];
+        yield 'GET groups'                => ['GET', 'v1/groups', $group, 'index', []];
+        yield 'GET groups/{id}'           => ['GET', 'v1/groups/5', $group, 'show', ['id' => '5']];
+        yield 'POST groups'               => ['POST', 'v1/groups', $group, 'store', []];
+        yield 'PUT groups/{id}'           => ['PUT', 'v1/groups/5', $group, 'replace', ['id' => '5']];
+        yield 'PATCH groups/{id}'         => ['PATCH', 'v1/groups/5', $group, 'update', ['id' => '5']];
+        yield 'DELETE groups/{id}'        => ['DELETE', 'v1/groups/5', $group, 'destroy', ['id' => '5']];
         yield 'GET boards'                => ['GET', 'v1/boards', $board, 'index', []];
         yield 'GET boards/{id}'           => ['GET', 'v1/boards/5', $board, 'show', ['id' => '5']];
         yield 'GET board topics'          => ['GET', 'v1/boards/5/topics', $topic, 'index', ['board_id' => '5']];
