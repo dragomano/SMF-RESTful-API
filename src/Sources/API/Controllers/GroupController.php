@@ -36,15 +36,30 @@ class GroupController extends AbstractController
 	 */
 	private const GROUP_TYPES = [0, 1, 2, 3];
 
-	/** Fields a client may write, in the order a full replace expects them. */
+	/**
+	 * Fields a client may write, mapped onto their {db_prefix}membergroups
+	 * column. SMF 2.1 has no add/modify helpers for groups — its admin screens
+	 * write the columns directly — so save() builds the UPDATE from this map.
+	 */
 	private const WRITABLE = [
-		'name',
-		'description',
-		'type',
-		'min_posts',
-		'max_messages',
-		'color',
-		'icons',
+		'name'         => ['type' => 'string', 'column' => 'group_name', 'length' => 80],
+		'description'  => ['type' => 'raw', 'column' => 'description'],
+		'type'         => ['type' => 'int', 'column' => 'group_type', 'max' => 3],
+		'min_posts'    => ['type' => 'int', 'column' => 'min_posts', 'min' => -1, 'clamp' => true],
+		'max_messages' => ['type' => 'int', 'column' => 'max_messages', 'clamp' => true],
+		'color'        => ['type' => 'string', 'column' => 'online_color', 'length' => 20, 'optional' => true],
+		'icons'        => ['type' => 'string', 'column' => 'icons', 'length' => 255, 'optional' => true],
+		'hidden'       => ['type' => 'bool', 'column' => 'hidden', 'optional' => true],
+		'parent'       => ['type' => 'int', 'column' => 'id_parent', 'min' => -2, 'optional' => true],
+		'tfa_required' => ['type' => 'bool', 'column' => 'tfa_required', 'optional' => true],
+	];
+
+	/** SMF column names accepted in place of the API field names. */
+	private const ALIASES = [
+		'group_name'   => 'name',
+		'group_type'   => 'type',
+		'online_color' => 'color',
+		'id_parent'    => 'parent',
 	];
 
 	/** Default icons value used by SMF's "add membergroup" screen. */
@@ -113,7 +128,8 @@ class GroupController extends AbstractController
 			throw ApiException::forbidden('You cannot manage member groups');
 		}
 
-		$name = $this->cleanString($this->request->input('name', ''));
+		$columns = $this->writableColumns(self::WRITABLE, false, self::ALIASES);
+		$name    = $columns['group_name'] ?? '';
 
 		if ($name === '') {
 			throw ApiException::badRequest('Field "name" is required');
@@ -123,13 +139,13 @@ class GroupController extends AbstractController
 			throw ApiException::badRequest('A member group with this name already exists');
 		}
 
-		$type = $this->groupType($this->request->input('type', 0));
+		$type = $this->groupType($columns['group_type'] ?? 0);
 
 		if ($type === 1 && ! allowedTo('admin_forum')) {
 			throw ApiException::forbidden('Only administrators can create protected member groups');
 		}
 
-		$minPosts = $this->minPosts($this->request->input('min_posts', -1));
+		$minPosts = $this->minPosts($columns['min_posts'] ?? -1);
 
 		// SMF marks post-count based groups by min_posts and stores group_type 0.
 		if ($minPosts >= 0) {
@@ -137,16 +153,16 @@ class GroupController extends AbstractController
 		}
 
 		$options = [
-			'description'  => $this->cleanString($this->request->input('description', '')),
+			'description'  => $columns['description'] ?? '',
 			'group_name'   => $name,
 			'min_posts'    => $minPosts,
-			'max_messages' => max(0, (int) $this->request->input('max_messages', 0)),
-			'icons'        => $this->cleanString($this->request->input('icons', self::DEFAULT_ICONS)),
-			'online_color' => $this->cleanString($this->request->input('color', '')),
+			'max_messages' => $columns['max_messages'] ?? 0,
+			'icons'        => $columns['icons'] ?? self::DEFAULT_ICONS,
+			'online_color' => $columns['online_color'] ?? '',
 			'group_type'   => $type,
-			'hidden'       => 0,
-			'id_parent'    => -2,
-			'tfa_required' => 0,
+			'hidden'       => (int) ($columns['hidden'] ?? false),
+			'id_parent'    => $columns['id_parent'] ?? -2,
+			'tfa_required' => (int) ($columns['tfa_required'] ?? false),
 		];
 
 		call_integration_hook('integrate_pre_add_membergroup', []);
@@ -179,7 +195,7 @@ class GroupController extends AbstractController
 				$options['tfa_required'],
 			],
 			['id_group'],
-			1
+			1,
 		);
 
 		if (empty($id)) {
@@ -267,6 +283,23 @@ class GroupController extends AbstractController
 		throw ApiException::badRequest('This member group cannot be deleted');
 	}
 
+	protected function transform(array $row): array
+	{
+		return [
+			'id'           => (int) $row['id_group'],
+			'name'         => $row['group_name'],
+			'description'  => $row['description'],
+			'type'         => (int) $row['group_type'],
+			'min_posts'    => (int) $row['min_posts'],
+			'max_messages' => (int) $row['max_messages'],
+			'color'        => $row['online_color'],
+			'icons'        => $row['icons'],
+			'hidden'       => (int) $row['hidden'],
+			'parent'       => (int) $row['id_parent'],
+			'tfa_required' => (bool) $row['tfa_required'],
+		];
+	}
+
 	/**
 	 * Shared PUT/PATCH body: validate access, apply the writable fields with the
 	 * same columns and side effects as SMF's EditMembergroup(), then answer with
@@ -298,30 +331,28 @@ class GroupController extends AbstractController
 			throw ApiException::forbidden('Only administrators can edit protected member groups');
 		}
 
-		$fields  = $this->writable(self::WRITABLE, $full);
+		$columns = $this->writableColumns(self::WRITABLE, $full, self::ALIASES);
 		$options = [];
 
-		if (array_key_exists('name', $fields)) {
-			$name = $this->cleanString($fields['name']);
-
-			if ($name === '') {
+		if (array_key_exists('group_name', $columns)) {
+			if ($columns['group_name'] === '') {
 				throw ApiException::badRequest('Field "name" cannot be empty');
 			}
 
-			if ($this->nameTaken($name, $id)) {
+			if ($this->nameTaken($columns['group_name'], $id)) {
 				throw ApiException::badRequest('A member group with this name already exists');
 			}
 
-			$options['group_name'] = $name;
+			$options['group_name'] = $columns['group_name'];
 		}
 
-		if (array_key_exists('description', $fields)) {
-			$options['description'] = $this->cleanString($fields['description']);
+		if (array_key_exists('description', $columns)) {
+			$options['description'] = $columns['description'];
 		}
 
-		$typeProvided  = array_key_exists('type', $fields);
-		$postsProvided = array_key_exists('min_posts', $fields);
-		$type          = $typeProvided ? $this->groupType($fields['type']) : (int) $current['group_type'];
+		$typeProvided  = array_key_exists('group_type', $columns);
+		$postsProvided = array_key_exists('min_posts', $columns);
+		$type          = $typeProvided ? $this->groupType($columns['group_type']) : (int) $current['group_type'];
 
 		if ($typeProvided && $type === 1 && ! allowedTo('admin_forum')) {
 			throw ApiException::forbidden('Only administrators can create protected member groups');
@@ -331,7 +362,7 @@ class GroupController extends AbstractController
 			// Changing "type" without "min_posts" converts a post-count group
 			// into a regular one; passing min_posts >= 0 makes it post-based.
 			$minPosts = $postsProvided
-				? $this->minPosts($fields['min_posts'])
+				? $this->minPosts($columns['min_posts'])
 				: ($typeProvided ? -1 : (int) $current['min_posts']);
 
 			if ($minPosts >= 0) {
@@ -342,16 +373,16 @@ class GroupController extends AbstractController
 			$options['min_posts']  = $minPosts;
 		}
 
-		if (array_key_exists('max_messages', $fields)) {
-			$options['max_messages'] = max(0, (int) $fields['max_messages']);
+		foreach (['max_messages', 'online_color', 'icons', 'id_parent'] as $column) {
+			if (array_key_exists($column, $columns)) {
+				$options[$column] = $columns[$column];
+			}
 		}
 
-		if (array_key_exists('color', $fields)) {
-			$options['online_color'] = $this->cleanString($fields['color']);
-		}
-
-		if (array_key_exists('icons', $fields)) {
-			$options['icons'] = $this->cleanString($fields['icons']);
+		foreach (['hidden', 'tfa_required'] as $column) {
+			if (array_key_exists($column, $columns)) {
+				$options[$column] = (int) $columns[$column];
+			}
 		}
 
 		$sets   = [];
@@ -365,6 +396,9 @@ class GroupController extends AbstractController
 			'max_messages' => 'int',
 			'online_color' => 'string',
 			'icons'        => 'string',
+			'hidden'       => 'int',
+			'id_parent'    => 'int',
+			'tfa_required' => 'int',
 		];
 
 		foreach ($options as $column => $value) {
@@ -450,22 +484,5 @@ class GroupController extends AbstractController
 	private function minPosts($value): int
 	{
 		return max(-1, (int) $value);
-	}
-
-	protected function transform(array $row): array
-	{
-		return [
-			'id'           => (int) $row['id_group'],
-			'name'         => $row['group_name'],
-			'description'  => $row['description'],
-			'type'         => (int) $row['group_type'],
-			'min_posts'    => (int) $row['min_posts'],
-			'max_messages' => (int) $row['max_messages'],
-			'color'        => $row['online_color'],
-			'icons'        => $row['icons'],
-			'hidden'       => (int) $row['hidden'],
-			'parent'       => (int) $row['id_parent'],
-			'tfa_required' => (bool) $row['tfa_required'],
-		];
 	}
 }

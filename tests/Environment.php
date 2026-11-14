@@ -39,7 +39,18 @@ if (! function_exists('call_integration_hook')) {
             $data[1] = $GLOBALS['api_auth_hook_id'];
         }
 
+        if (isset($GLOBALS['api_hook_handlers'][$hook])) {
+            return ($GLOBALS['api_hook_handlers'][$hook])(...$data);
+        }
+
         return null;
+    }
+}
+
+if (! function_exists('log_error')) {
+    function log_error(string $message): void
+    {
+        $GLOBALS['api_errors'][] = $message;
     }
 }
 
@@ -259,6 +270,36 @@ if (! function_exists('removeMessage')) {
     }
 }
 
+if (! function_exists('approveTopics')) {
+    function approveTopics($topics, bool $approve = true): void
+    {
+        $GLOBALS['api_approve_topics'][] = [$topics, $approve];
+    }
+}
+
+if (! function_exists('approvePosts')) {
+    function approvePosts($msgs, bool $approve = true, bool $notify = true): void
+    {
+        $GLOBALS['api_approve_posts'][] = [$msgs, $approve];
+    }
+}
+
+if (! function_exists('moveTopics')) {
+    function moveTopics($topics, $toBoard): void
+    {
+        $GLOBALS['api_move_topics'][] = [$topics, $toBoard];
+    }
+}
+
+if (! function_exists('hash_password')) {
+    function hash_password(string $username, string $password, ?int $cost = null): string
+    {
+        $GLOBALS['api_hashed'][] = [$username, $password];
+
+        return 'hashed:' . $username . ':' . $password;
+    }
+}
+
 // The SMF\API classes are resolved through composer's PSR-4 autoloader
 // (SMF\API\ => src/Sources/API). SMF is defined above, so the "no direct
 // access" guard at the top of each source file passes when it is autoloaded.
@@ -288,6 +329,8 @@ final class Environment
         // Recorders populated by the stubs above.
         $GLOBALS['api_hooks']               = [];
         $GLOBALS['api_hook_calls']          = [];
+        $GLOBALS['api_hook_handlers']       = [];
+        $GLOBALS['api_errors']              = [];
         $GLOBALS['api_languages_loaded']    = [];
         $GLOBALS['api_templates_loaded']    = [];
         $GLOBALS['api_queries']             = [];
@@ -308,6 +351,10 @@ final class Environment
         $GLOBALS['api_preparsecode']        = [];
         $GLOBALS['api_remove_topics']       = [];
         $GLOBALS['api_remove_message']      = [];
+        $GLOBALS['api_approve_topics']      = [];
+        $GLOBALS['api_approve_posts']       = [];
+        $GLOBALS['api_move_topics']         = [];
+        $GLOBALS['api_hashed']              = [];
 
         // Database fakes: rows feed db_fetch_assoc (FIFO), api_total feeds the
         // COUNT read, and api_num_rows(_queue) drives EXISTS checks.
@@ -395,6 +442,7 @@ final class Environment
         array $headers = []
     ): Request {
         $_SERVER['REQUEST_METHOD'] = $method;
+
         $_GET  = $query;
         $_POST = $method === 'GET' ? [] : $body;
 
@@ -448,7 +496,16 @@ final class Environment
             mkdir($dir, 0777, true);
         }
 
-        foreach (['Subs-Categories.php', 'Subs-Boards.php', 'Subs-Members.php', 'Subs-Membergroups.php', 'Subs-Post.php', 'RemoveTopic.php'] as $file) {
+        foreach ([
+            'Subs-Categories.php',
+            'Subs-Boards.php',
+            'Subs-Members.php',
+            'Subs-Membergroups.php',
+            'Subs-Post.php',
+            'Subs-Auth.php',
+            'MoveTopic.php',
+            'RemoveTopic.php',
+        ] as $file) {
             $path = $dir . '/' . $file;
 
             if (! is_file($path)) {

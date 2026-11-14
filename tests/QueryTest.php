@@ -54,14 +54,10 @@ final class QueryTest
         );
     }
 
-    private function normalize(string $sql): string
-    {
-        return preg_replace('/\s+/', ' ', trim($sql));
-    }
-
     public function firstReturnsTheRowAndSendsTheSingleQuery(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows'] = [['id_cat' => 3, 'name' => 'General']];
 
         $row = (new Query())
@@ -87,18 +83,23 @@ final class QueryTest
     public function existsReflectsTheRowCount(): void
     {
         Environment::reset();
+
         $GLOBALS['api_num_rows'] = 1;
+
         Assert::true((new Query())->from('{db_prefix}boards')->where('1=1')->exists());
         Assert::same($GLOBALS['api_free_result'], 1);
 
         Environment::reset();
+
         $GLOBALS['api_num_rows'] = 0;
+
         Assert::false((new Query())->from('{db_prefix}boards')->where('1=0')->exists());
     }
 
     public function fetchAllCollectsEveryRow(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows'] = [['id' => 1], ['id' => 2], ['id' => 3]];
 
         $rows = (new Query())->from('{db_prefix}boards')->where('1=1')->fetchAll();
@@ -110,7 +111,9 @@ final class QueryTest
     public function fetchPageReturnsRowsWithTheGrandTotal(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows']  = [['id' => 1], ['id' => 2]];
+
         // A string total (as the DB layer returns) makes the (int) cast observable.
         $GLOBALS['api_total'] = '40';
 
@@ -142,5 +145,10 @@ final class QueryTest
             'limit'  => 25,
             'active' => 1,
         ]);
+    }
+
+    private function normalize(string $sql): string
+    {
+        return preg_replace('/\s+/', ' ', trim($sql));
     }
 }

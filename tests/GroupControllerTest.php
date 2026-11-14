@@ -47,6 +47,7 @@ final class GroupControllerTest
     public function indexReturnsTransformedGroups(): void
     {
         Environment::reset();
+
         $GLOBALS['api_total'] = 1;
         $GLOBALS['api_rows']  = [self::GROUP_ROW];
 
@@ -60,6 +61,7 @@ final class GroupControllerTest
     public function indexHidesHiddenAndModeratorGroupsFromRegularMembers(): void
     {
         Environment::reset();
+
         $GLOBALS['api_total'] = 1;
         $GLOBALS['api_rows']  = [self::GROUP_ROW];
 
@@ -75,6 +77,7 @@ final class GroupControllerTest
     public function indexShowsEverythingToAdministrators(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups', 'admin_forum'];
         $GLOBALS['api_total']       = 1;
         $GLOBALS['api_rows']        = [self::GROUP_ROW];
@@ -87,6 +90,7 @@ final class GroupControllerTest
     public function showReturnsAgroup(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows'] = [self::GROUP_ROW];
 
         $response = (new GroupController(Environment::request()))->show(['id' => '5']);
@@ -97,6 +101,7 @@ final class GroupControllerTest
     public function showHidesAhiddenGroupFromRegularMembers(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows'] = [['hidden' => '2'] + self::GROUP_ROW];
 
         $exception = $this->error(fn () => (new GroupController(Environment::request()))->show(['id' => '5']));
@@ -107,6 +112,7 @@ final class GroupControllerTest
     public function showRevealsAhiddenGroupToManagers(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [['hidden' => '2'] + self::GROUP_ROW];
 
@@ -118,6 +124,7 @@ final class GroupControllerTest
     public function showHidesTheModeratorGroupFromNonAdministrators(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [['id_group' => '3'] + self::GROUP_ROW];
 
@@ -138,6 +145,7 @@ final class GroupControllerTest
     public function storeCreatesAregularGroup(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_new_id']      = 12;
 
@@ -175,6 +183,7 @@ final class GroupControllerTest
     public function storeUsesTheSmfDefaultIcons(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
 
         $request = Environment::request('POST', ['name' => 'VIP']);
@@ -187,6 +196,7 @@ final class GroupControllerTest
     public function storeCreatesApostCountGroup(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
 
         // min_posts >= 0 makes it post-based; SMF always stores group_type 0.
@@ -202,6 +212,7 @@ final class GroupControllerTest
     public function storeNormalizesANegativePostThreshold(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
 
         $request = Environment::request('POST', ['name' => 'VIP', 'min_posts' => '-20']);
@@ -213,6 +224,7 @@ final class GroupControllerTest
     public function storeEnablesGroupMembershipForJoinableGroups(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
 
         $request = Environment::request('POST', ['name' => 'Joinable', 'type' => '2']);
@@ -225,6 +237,7 @@ final class GroupControllerTest
     public function storeAllowsAprotectedGroupForAdministrators(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups', 'admin_forum'];
 
         $request = Environment::request('POST', ['name' => 'Protected', 'type' => '1']);
@@ -236,6 +249,7 @@ final class GroupControllerTest
     public function storeRefusesAprotectedGroupForNonAdministrators(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
 
         $request   = Environment::request('POST', ['name' => 'Protected', 'type' => '1']);
@@ -247,6 +261,7 @@ final class GroupControllerTest
     public function storeRejectsAmissingName(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
 
         $request   = Environment::request('POST', ['description' => 'no name']);
@@ -258,6 +273,7 @@ final class GroupControllerTest
     public function storeRejectsAduplicateName(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_num_rows']    = 1;
 
@@ -270,6 +286,7 @@ final class GroupControllerTest
     public function storeRejectsAnInvalidType(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
 
         $request   = Environment::request('POST', ['name' => 'VIP', 'type' => 9]);
@@ -291,6 +308,7 @@ final class GroupControllerTest
     public function updateAppliesTheSuppliedFields(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [
             self::GROUP_ROW,
@@ -315,6 +333,7 @@ final class GroupControllerTest
     public function updateTurnsApostGroupIntoAregularGroup(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [
             ['min_posts' => '50'] + self::GROUP_ROW,
@@ -336,6 +355,7 @@ final class GroupControllerTest
     public function updateTurnsAregularGroupIntoApostGroup(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [self::GROUP_ROW, self::GROUP_ROW];
 
@@ -353,6 +373,7 @@ final class GroupControllerTest
     public function updateKeepsThePostThresholdWhenOnlyOtherFieldsChange(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [self::GROUP_ROW, self::GROUP_ROW];
 
@@ -369,6 +390,7 @@ final class GroupControllerTest
     public function updateClampsNegativeNumbers(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [self::GROUP_ROW, self::GROUP_ROW];
 
@@ -384,6 +406,7 @@ final class GroupControllerTest
     public function updateRejectsAduplicateName(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [self::GROUP_ROW];
         $GLOBALS['api_num_rows']    = 1;
@@ -397,6 +420,7 @@ final class GroupControllerTest
     public function updateRejectsAmissingGroup(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
 
         $request   = Environment::request('PATCH', ['name' => 'Renamed']);
@@ -408,6 +432,7 @@ final class GroupControllerTest
     public function updateRefusesAprotectedGroupForNonAdministrators(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [['group_type' => '1'] + self::GROUP_ROW];
 
@@ -420,6 +445,7 @@ final class GroupControllerTest
     public function updateLetsAdministratorsEditAprotectedGroup(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups', 'admin_forum'];
         $GLOBALS['api_rows']        = [
             ['group_type' => '1'] + self::GROUP_ROW,
@@ -435,6 +461,7 @@ final class GroupControllerTest
     public function updateRefusesCreatingAprotectedGroupForNonAdministrators(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [self::GROUP_ROW];
 
@@ -447,6 +474,7 @@ final class GroupControllerTest
     public function updateIsRefusedWithoutPermission(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows'] = [self::GROUP_ROW];
 
         $request   = Environment::request('PATCH', ['name' => 'Renamed']);
@@ -458,6 +486,7 @@ final class GroupControllerTest
     public function replaceDemandsEveryWritableField(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [self::GROUP_ROW];
 
@@ -470,6 +499,7 @@ final class GroupControllerTest
     public function replaceAppliesEveryField(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [self::GROUP_ROW, self::GROUP_ROW];
 
@@ -500,6 +530,7 @@ final class GroupControllerTest
     public function destroyRemovesAgroup(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [self::GROUP_ROW];
 
@@ -512,6 +543,7 @@ final class GroupControllerTest
     public function destroyRefusesAprotectedGroupForNonAdministrators(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
         $GLOBALS['api_rows']        = [['group_type' => '1'] + self::GROUP_ROW];
 
@@ -523,6 +555,7 @@ final class GroupControllerTest
     public function destroyReportsAprotectedGroupAsUndeletableForAdministrators(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions']                = ['manage_membergroups', 'admin_forum'];
         $GLOBALS['api_rows']                       = [['group_type' => '1'] + self::GROUP_ROW];
         $GLOBALS['api_delete_membergroups_result'] = 'no_group_found';
@@ -535,6 +568,7 @@ final class GroupControllerTest
     public function destroyReportsApaidSubscriptionGroup(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions']                = ['manage_membergroups'];
         $GLOBALS['api_rows']                       = [self::GROUP_ROW];
         $GLOBALS['api_delete_membergroups_result'] = 'group_cannot_delete_sub';
@@ -547,6 +581,7 @@ final class GroupControllerTest
     public function destroyRejectsAmissingGroup(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_membergroups'];
 
         $exception = $this->error(fn () => (new GroupController(Environment::request()))->destroy(['id' => '5']));
@@ -561,6 +596,23 @@ final class GroupControllerTest
         $exception = $this->error(fn () => (new GroupController(Environment::request()))->destroy(['id' => '5']));
 
         Assert::same($exception->getStatusCode(), 403);
+    }
+
+    public function updateWritesTheHiddenFlagParentAndTwoFactor(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['manage_membergroups'];
+        $GLOBALS['api_rows']        = [self::GROUP_ROW, self::GROUP_ROW];
+
+        (new GroupController(Environment::request('PATCH', ['hidden' => true, 'parent' => 2, 'tfa_required' => true])))->update(['id' => '5']);
+
+        Assert::same($this->updateQuery()['params'], [
+            'id'           => 5,
+            'id_parent'    => 2,
+            'hidden'       => 1,
+            'tfa_required' => 1,
+        ]);
     }
 
     /**

@@ -18,10 +18,76 @@ use Testo\Test;
 
 require_once __DIR__ . '/Environment.php';
 
+final class DispatchProbeController
+{
+    public function __construct(SMF\API\Request $request) {}
+
+    public function __call(string $action, array $arguments): mixed
+    {
+        return match ($action) {
+            'data'      => ['id' => 7],
+            'response'  => (new SMF\API\Response())->status(201)->data(['id' => 7]),
+            'api-error' => throw ApiException::badRequest('Invalid probe'),
+            default     => throw new RuntimeException('private diagnostic'),
+        };
+    }
+}
+
 #[Test]
 #[Covers(Router::class)]
 final class RouterTest
 {
+    public function dispatchConvertsControllerResultsAndErrorsIntoResponses(): void
+    {
+        foreach (['data', 'response', 'api-error', 'unexpected-error'] as $mode) {
+            Environment::reset();
+
+            $_GET['path'] = 'v1/probe';
+
+            $GLOBALS['api_auth_hook_id'] = 5;
+
+            $GLOBALS['api_rows'] = [[
+                'id_member'         => 5,
+                'member_name'       => 'tester',
+                'real_name'         => 'Tester',
+                'email_address'     => 'tester@example.test',
+                'id_group'          => 2,
+                'additional_groups' => '',
+                'id_post_group'     => 0,
+                'is_activated'      => 1,
+            ]];
+
+            $GLOBALS['api_routes_hook'] = static function (Router $router) use ($mode): void {
+                $router->get('probe', DispatchProbeController::class, $mode);
+            };
+
+            $sent = [];
+
+            $GLOBALS['api_hook_handlers']['integrate_api_pre_send'] = static function ($payload, $status) use (&$sent): void {
+                $sent[] = [$status, $payload];
+
+                throw new RuntimeException('stop-before-output');
+            };
+
+            try {
+                (new Router())->dispatch();
+                Assert::fail('Dispatch must send a response');
+            } catch (RuntimeException $exception) {
+                Assert::same($exception->getMessage(), 'stop-before-output');
+            }
+
+            $expected = match ($mode) {
+                'data'      => [200, ['data' => ['id' => 7]]],
+                'response'  => [201, ['data' => ['id' => 7]]],
+                'api-error' => [400, ['error' => ['code' => 'bad_request', 'message' => 'Invalid probe']]],
+                default     => [500, ['error' => ['code' => 'internal_error', 'message' => 'Internal server error']]],
+            };
+
+            Assert::same($sent[0], $expected);
+            Assert::contains($GLOBALS['api_hook_calls'], 'integrate_api_pre_dispatch');
+        }
+    }
+
     public function resolvesAtopLevelCollection(): void
     {
         Assert::same($this->match('GET', 'v1/categories'), [CategoryController::class, 'index', []]);
@@ -71,9 +137,9 @@ final class RouterTest
     public function registersRoutesAddedThroughTheVerbHelpers(): void
     {
         Environment::reset();
-        $router = new Router();
 
-        $self = $router->post('widgets/{id}', 'Vendor\\WidgetController', 'act');
+        $router = new Router();
+        $self   = $router->post('widgets/{id}', 'Vendor\\WidgetController', 'act');
 
         Assert::same($self, $router);
         Assert::same(
@@ -102,10 +168,12 @@ final class RouterTest
     public function invokesTheRouteRegistrationHookWithTheRouter(): void
     {
         Environment::reset();
+
         $captured = null;
 
         $GLOBALS['api_routes_hook'] = static function ($router) use (&$captured): void {
             $captured = $router;
+
             $router->post('widgets', 'Vendor\\WidgetController', 'store');
         };
 
@@ -119,6 +187,7 @@ final class RouterTest
     public function normalizesTheHttpVerbToUppercase(): void
     {
         Environment::reset();
+
         $router = new Router();
         $router->add('get', 'widgets', 'Vendor\\WidgetController', 'index');
 
@@ -128,6 +197,7 @@ final class RouterTest
     public function trimsSurroundingSlashesFromRoutePatterns(): void
     {
         Environment::reset();
+
         $router = new Router();
         $router->add('GET', '/widgets/', 'Vendor\\WidgetController', 'index');
 
@@ -143,44 +213,44 @@ final class RouterTest
         $topic  = TopicController::class;
         $post   = PostController::class;
 
-        yield 'GET categories'            => ['GET', 'v1/categories', $cat, 'index', []];
-        yield 'GET categories/{id}'       => ['GET', 'v1/categories/5', $cat, 'show', ['id' => '5']];
-        yield 'GET category boards'       => ['GET', 'v1/categories/5/boards', $board, 'index', ['cat_id' => '5']];
-        yield 'POST categories'           => ['POST', 'v1/categories', $cat, 'store', []];
-        yield 'PUT categories/{id}'       => ['PUT', 'v1/categories/5', $cat, 'replace', ['id' => '5']];
-        yield 'PATCH categories/{id}'     => ['PATCH', 'v1/categories/5', $cat, 'update', ['id' => '5']];
-        yield 'DELETE categories/{id}'    => ['DELETE', 'v1/categories/5', $cat, 'destroy', ['id' => '5']];
-        yield 'GET members'               => ['GET', 'v1/members', $member, 'index', []];
-        yield 'GET members/{id}'          => ['GET', 'v1/members/5', $member, 'show', ['id' => '5']];
-        yield 'POST members'              => ['POST', 'v1/members', $member, 'store', []];
-        yield 'PUT members/{id}'          => ['PUT', 'v1/members/5', $member, 'replace', ['id' => '5']];
-        yield 'PATCH members/{id}'        => ['PATCH', 'v1/members/5', $member, 'update', ['id' => '5']];
-        yield 'DELETE members/{id}'       => ['DELETE', 'v1/members/5', $member, 'destroy', ['id' => '5']];
-        yield 'GET groups'                => ['GET', 'v1/groups', $group, 'index', []];
-        yield 'GET groups/{id}'           => ['GET', 'v1/groups/5', $group, 'show', ['id' => '5']];
-        yield 'POST groups'               => ['POST', 'v1/groups', $group, 'store', []];
-        yield 'PUT groups/{id}'           => ['PUT', 'v1/groups/5', $group, 'replace', ['id' => '5']];
-        yield 'PATCH groups/{id}'         => ['PATCH', 'v1/groups/5', $group, 'update', ['id' => '5']];
-        yield 'DELETE groups/{id}'        => ['DELETE', 'v1/groups/5', $group, 'destroy', ['id' => '5']];
-        yield 'GET boards'                => ['GET', 'v1/boards', $board, 'index', []];
-        yield 'GET boards/{id}'           => ['GET', 'v1/boards/5', $board, 'show', ['id' => '5']];
-        yield 'GET board topics'          => ['GET', 'v1/boards/5/topics', $topic, 'index', ['board_id' => '5']];
-        yield 'POST boards'               => ['POST', 'v1/boards', $board, 'store', []];
-        yield 'PUT boards/{id}'           => ['PUT', 'v1/boards/5', $board, 'replace', ['id' => '5']];
-        yield 'PATCH boards/{id}'         => ['PATCH', 'v1/boards/5', $board, 'update', ['id' => '5']];
-        yield 'DELETE boards/{id}'        => ['DELETE', 'v1/boards/5', $board, 'destroy', ['id' => '5']];
-        yield 'GET topics'                => ['GET', 'v1/topics', $topic, 'index', []];
-        yield 'GET topics/{id}'           => ['GET', 'v1/topics/5', $topic, 'show', ['id' => '5']];
-        yield 'GET topic posts'           => ['GET', 'v1/topics/5/posts', $post, 'index', ['topic_id' => '5']];
-        yield 'POST topics'               => ['POST', 'v1/topics', $topic, 'store', []];
-        yield 'PUT topics/{id}'           => ['PUT', 'v1/topics/5', $topic, 'replace', ['id' => '5']];
-        yield 'PATCH topics/{id}'         => ['PATCH', 'v1/topics/5', $topic, 'update', ['id' => '5']];
-        yield 'DELETE topics/{id}'        => ['DELETE', 'v1/topics/5', $topic, 'destroy', ['id' => '5']];
-        yield 'GET posts/{id}'            => ['GET', 'v1/posts/5', $post, 'show', ['id' => '5']];
-        yield 'POST posts'                => ['POST', 'v1/posts', $post, 'store', []];
-        yield 'PUT posts/{id}'            => ['PUT', 'v1/posts/5', $post, 'replace', ['id' => '5']];
-        yield 'PATCH posts/{id}'          => ['PATCH', 'v1/posts/5', $post, 'update', ['id' => '5']];
-        yield 'DELETE posts/{id}'         => ['DELETE', 'v1/posts/5', $post, 'destroy', ['id' => '5']];
+        yield 'GET categories'         => ['GET', 'v1/categories', $cat, 'index', []];
+        yield 'GET categories/{id}'    => ['GET', 'v1/categories/5', $cat, 'show', ['id' => '5']];
+        yield 'GET category boards'    => ['GET', 'v1/categories/5/boards', $board, 'index', ['cat_id' => '5']];
+        yield 'POST categories'        => ['POST', 'v1/categories', $cat, 'store', []];
+        yield 'PUT categories/{id}'    => ['PUT', 'v1/categories/5', $cat, 'replace', ['id' => '5']];
+        yield 'PATCH categories/{id}'  => ['PATCH', 'v1/categories/5', $cat, 'update', ['id' => '5']];
+        yield 'DELETE categories/{id}' => ['DELETE', 'v1/categories/5', $cat, 'destroy', ['id' => '5']];
+        yield 'GET members'            => ['GET', 'v1/members', $member, 'index', []];
+        yield 'GET members/{id}'       => ['GET', 'v1/members/5', $member, 'show', ['id' => '5']];
+        yield 'POST members'           => ['POST', 'v1/members', $member, 'store', []];
+        yield 'PUT members/{id}'       => ['PUT', 'v1/members/5', $member, 'replace', ['id' => '5']];
+        yield 'PATCH members/{id}'     => ['PATCH', 'v1/members/5', $member, 'update', ['id' => '5']];
+        yield 'DELETE members/{id}'    => ['DELETE', 'v1/members/5', $member, 'destroy', ['id' => '5']];
+        yield 'GET groups'             => ['GET', 'v1/groups', $group, 'index', []];
+        yield 'GET groups/{id}'        => ['GET', 'v1/groups/5', $group, 'show', ['id' => '5']];
+        yield 'POST groups'            => ['POST', 'v1/groups', $group, 'store', []];
+        yield 'PUT groups/{id}'        => ['PUT', 'v1/groups/5', $group, 'replace', ['id' => '5']];
+        yield 'PATCH groups/{id}'      => ['PATCH', 'v1/groups/5', $group, 'update', ['id' => '5']];
+        yield 'DELETE groups/{id}'     => ['DELETE', 'v1/groups/5', $group, 'destroy', ['id' => '5']];
+        yield 'GET boards'             => ['GET', 'v1/boards', $board, 'index', []];
+        yield 'GET boards/{id}'        => ['GET', 'v1/boards/5', $board, 'show', ['id' => '5']];
+        yield 'GET board topics'       => ['GET', 'v1/boards/5/topics', $topic, 'index', ['board_id' => '5']];
+        yield 'POST boards'            => ['POST', 'v1/boards', $board, 'store', []];
+        yield 'PUT boards/{id}'        => ['PUT', 'v1/boards/5', $board, 'replace', ['id' => '5']];
+        yield 'PATCH boards/{id}'      => ['PATCH', 'v1/boards/5', $board, 'update', ['id' => '5']];
+        yield 'DELETE boards/{id}'     => ['DELETE', 'v1/boards/5', $board, 'destroy', ['id' => '5']];
+        yield 'GET topics'             => ['GET', 'v1/topics', $topic, 'index', []];
+        yield 'GET topics/{id}'        => ['GET', 'v1/topics/5', $topic, 'show', ['id' => '5']];
+        yield 'GET topic posts'        => ['GET', 'v1/topics/5/posts', $post, 'index', ['topic_id' => '5']];
+        yield 'POST topics'            => ['POST', 'v1/topics', $topic, 'store', []];
+        yield 'PUT topics/{id}'        => ['PUT', 'v1/topics/5', $topic, 'replace', ['id' => '5']];
+        yield 'PATCH topics/{id}'      => ['PATCH', 'v1/topics/5', $topic, 'update', ['id' => '5']];
+        yield 'DELETE topics/{id}'     => ['DELETE', 'v1/topics/5', $topic, 'destroy', ['id' => '5']];
+        yield 'GET posts/{id}'         => ['GET', 'v1/posts/5', $post, 'show', ['id' => '5']];
+        yield 'POST posts'             => ['POST', 'v1/posts', $post, 'store', []];
+        yield 'PUT posts/{id}'         => ['PUT', 'v1/posts/5', $post, 'replace', ['id' => '5']];
+        yield 'PATCH posts/{id}'       => ['PATCH', 'v1/posts/5', $post, 'update', ['id' => '5']];
+        yield 'DELETE posts/{id}'      => ['DELETE', 'v1/posts/5', $post, 'destroy', ['id' => '5']];
     }
 
     private function match(string $method, string $path): array

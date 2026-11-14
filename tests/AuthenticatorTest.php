@@ -40,6 +40,7 @@ final class AuthenticatorTest
     public function rejectsAnUnknownKey(): void
     {
         Environment::reset();
+
         $GLOBALS['modSettings']['api_keys'] = json_encode(['good-token' => 5]);
 
         $exception = $this->authenticateFailure(
@@ -53,8 +54,9 @@ final class AuthenticatorTest
     public function acceptsAvalidKeyAndRebuildsTheUserContext(): void
     {
         Environment::reset();
+
         $GLOBALS['modSettings']['api_keys'] = json_encode(['secret-token' => 5]);
-        $GLOBALS['api_rows'] = [self::MEMBER];
+        $GLOBALS['api_rows']                = [self::MEMBER];
 
         $auth = new Authenticator();
         $auth->authenticate(Environment::request('GET', [], ['api_key' => 'secret-token']));
@@ -78,7 +80,9 @@ final class AuthenticatorTest
     public function buildsTheGroupListFromPrimaryPostAndAdditionalGroups(): void
     {
         Environment::reset();
+
         $GLOBALS['modSettings']['api_keys'] = json_encode(['secret-token' => 5]);
+
         // Duplicate primary group, an empty entry, and the admin group (1).
         $GLOBALS['api_rows'] = [['additional_groups' => '2,,3,1'] + self::MEMBER];
 
@@ -93,9 +97,10 @@ final class AuthenticatorTest
     public function grantsBoardManagementToConfiguredGroups(): void
     {
         Environment::reset();
-        $GLOBALS['modSettings']['api_keys'] = json_encode(['secret-token' => 5]);
+
+        $GLOBALS['modSettings']['api_keys']             = json_encode(['secret-token' => 5]);
         $GLOBALS['modSettings']['board_manager_groups'] = '2,7';
-        $GLOBALS['api_rows'] = [self::MEMBER];
+        $GLOBALS['api_rows']                            = [self::MEMBER];
 
         $auth = new Authenticator();
         $auth->authenticate(Environment::request('GET', [], ['api_key' => 'secret-token']));
@@ -108,9 +113,10 @@ final class AuthenticatorTest
     public function deniesBoardManagementToUnlistedGroups(): void
     {
         Environment::reset();
-        $GLOBALS['modSettings']['api_keys'] = json_encode(['secret-token' => 5]);
+
+        $GLOBALS['modSettings']['api_keys']             = json_encode(['secret-token' => 5]);
         $GLOBALS['modSettings']['board_manager_groups'] = '7,8';
-        $GLOBALS['api_rows'] = [self::MEMBER];
+        $GLOBALS['api_rows']                            = [self::MEMBER];
 
         $auth = new Authenticator();
         $auth->authenticate(Environment::request('GET', [], ['api_key' => 'secret-token']));
@@ -121,8 +127,9 @@ final class AuthenticatorTest
     public function marksMembersOfTheAdminGroupAsAdministrators(): void
     {
         Environment::reset();
+
         $GLOBALS['modSettings']['api_keys'] = json_encode(['secret-token' => 5]);
-        $GLOBALS['api_rows'] = [['id_group' => 1] + self::MEMBER];
+        $GLOBALS['api_rows']                = [['id_group' => 1] + self::MEMBER];
 
         $auth = new Authenticator();
         $auth->authenticate(Environment::request('GET', [], ['api_key' => 'secret-token']));
@@ -135,8 +142,9 @@ final class AuthenticatorTest
     public function letsAmodResolveTheMemberThroughTheHook(): void
     {
         Environment::reset();
+
         $GLOBALS['api_auth_hook_id'] = 5;
-        $GLOBALS['api_rows'] = [self::MEMBER];
+        $GLOBALS['api_rows']         = [self::MEMBER];
 
         $auth = new Authenticator();
         $auth->authenticate(Environment::request());
@@ -147,8 +155,9 @@ final class AuthenticatorTest
     public function rejectsAkeyWhoseMemberIsGoneOrInactive(): void
     {
         Environment::reset();
+
         $GLOBALS['modSettings']['api_keys'] = json_encode(['secret-token' => 5]);
-        $GLOBALS['api_rows'] = [['is_activated' => 0] + self::MEMBER];
+        $GLOBALS['api_rows']                = [['is_activated' => 0] + self::MEMBER];
 
         $exception = $this->authenticateFailure(
             Environment::request('GET', [], ['api_key' => 'secret-token'])
@@ -161,6 +170,7 @@ final class AuthenticatorTest
     public function requireGuardsAgainstMissingPermissions(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['moderate_forum'];
 
         $auth = new Authenticator();
@@ -206,6 +216,7 @@ final class AuthenticatorTest
     public function resolvesKeysAgainstTheStoredMap(): void
     {
         Environment::reset();
+
         $GLOBALS['modSettings']['api_keys'] = json_encode(['abc' => 7]);
 
         Assert::same($this->resolveKey('abc'), 7);

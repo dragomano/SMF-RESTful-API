@@ -13,6 +13,39 @@ require_once __DIR__ . '/Environment.php';
 #[Covers(Integration::class)]
 final class IntegrationTest
 {
+    public function dispatchReportsDisabledApiOrEntersTheRouter(): void
+    {
+        foreach ([false, true] as $enabled) {
+            Environment::reset();
+
+            $GLOBALS['modSettings']['api_enabled'] = $enabled;
+
+            $sent = [];
+
+            $GLOBALS['api_hook_handlers']['integrate_api_pre_send'] = static function ($payload, $status) use (&$sent): void {
+                $sent[] = [$status, $payload];
+
+                throw new RuntimeException('stop-before-output');
+            };
+
+            try {
+                (new Integration())->dispatch();
+
+                Assert::fail('Dispatch must send a response');
+            } catch (RuntimeException $exception) {
+                Assert::same($exception->getMessage(), 'stop-before-output');
+            }
+
+            Assert::same($sent[0][0], $enabled ? 401 : 503);
+            Assert::same($sent[0][1]['error']['code'], $enabled ? 'unauthorized' : 'service_unavailable');
+
+            if ($enabled) {
+                Assert::true(defined('SMF_API_REQUEST'));
+                Assert::contains($GLOBALS['api_hook_calls'], 'integrate_api_pre_dispatch');
+            }
+        }
+    }
+
     public function hooksRegistersEveryIntegrationPoint(): void
     {
         Environment::reset();
@@ -32,6 +65,7 @@ final class IntegrationTest
     public function autoloadMapsTheNamespaceToItsDirectory(): void
     {
         Environment::reset();
+
         $classMap = [];
 
         (new Integration())->autoload($classMap);
@@ -42,6 +76,7 @@ final class IntegrationTest
     public function actionsRegistersTheApiAction(): void
     {
         Environment::reset();
+
         $actionArray = [];
 
         (new Integration())->actions($actionArray);
@@ -54,6 +89,7 @@ final class IntegrationTest
     public function adminAreasAddsTheApiSubsection(): void
     {
         Environment::reset();
+
         $admin_areas = ['config' => ['areas' => ['modsettings' => ['subsections' => []]]]];
 
         (new Integration())->adminAreas($admin_areas);
@@ -65,6 +101,7 @@ final class IntegrationTest
     public function adminSearchRegistersTheLanguageFileAndSettingsPage(): void
     {
         Environment::reset();
+
         $language_files  = [];
         $include_files   = [];
         $settings_search = [];
@@ -80,6 +117,7 @@ final class IntegrationTest
     public function modifyModificationsRegistersTheSettingsSubAction(): void
     {
         Environment::reset();
+
         $subActions = [];
 
         (new Integration())->modifyModifications($subActions);
@@ -101,6 +139,7 @@ final class IntegrationTest
     public function settingsBuildsTheEditorContextFromTheStoredKeys(): void
     {
         Environment::reset();
+
         // A string member id (as JSON may carry) makes the (int) cast observable;
         // two rows guard against the list being truncated.
         $GLOBALS['modSettings']['api_keys'] = '{"token-a":"5","token-b":9}';
@@ -125,6 +164,7 @@ final class IntegrationTest
     public function settingsReturnsAnEmptyKeyListForMalformedStorage(): void
     {
         Environment::reset();
+
         $GLOBALS['modSettings']['api_keys'] = 'not-json';
 
         (new Integration())->settings();
@@ -135,7 +175,9 @@ final class IntegrationTest
     public function settingsSavesTheKeyMapAndRedirects(): void
     {
         Environment::reset();
+
         $_GET['save'] = '';
+
         // Surrounding whitespace on the token must be trimmed before storage.
         $_POST['api_key_token']  = ['  token-a  '];
         $_POST['api_key_member'] = ['5'];
@@ -160,6 +202,7 @@ final class IntegrationTest
     public function settingsStoresTheEnabledFlagWhenChecked(): void
     {
         Environment::reset();
+
         $_GET['save']            = '';
         $_POST['api_enabled']    = '1';
         $_POST['api_key_token']  = ['token-a'];
@@ -176,7 +219,9 @@ final class IntegrationTest
     public function settingsSkipsAcompletelyBlankKeyRow(): void
     {
         Environment::reset();
+
         $_GET['save'] = '';
+
         // A blank row followed by a valid one: the blank is skipped (continue),
         // the valid row still gets processed.
         $_POST['api_key_token']  = ['', 'token-b'];
@@ -197,7 +242,9 @@ final class IntegrationTest
     public function settingsReportsAkeyRowMissingItsMemberWithoutRedirecting(): void
     {
         Environment::reset();
+
         $_GET['save'] = '';
+
         $_POST['api_key_token']  = ['token-a'];
         // No member value at all → falls back to the default 0 → the row is flagged.
         $_POST['api_key_member'] = [];
@@ -224,7 +271,9 @@ final class IntegrationTest
     public function settingsStillSavesTheValidRowsWhenAnotherRowIsInvalid(): void
     {
         Environment::reset();
+
         $_GET['save'] = '';
+
         // First row is valid, second is missing its member: the valid one is
         // persisted, the bad one is reported without discarding everything.
         $_POST['api_key_token']  = ['token-a', 'token-b'];

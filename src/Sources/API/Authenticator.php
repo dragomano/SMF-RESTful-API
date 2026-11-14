@@ -165,18 +165,20 @@ class Authenticator
 			[(int) $this->member['id_group'], (int) $this->member['id_post_group']],
 			array_map(intval(...), array_filter(explode(',', (string) $this->member['additional_groups'])))
 		);
+
 		$groups = array_values(array_unique(array_filter($groups, static fn ($g) => $g !== null)));
 
-		$user_info['id']                = (int) $this->member['id_member'];
-		$user_info['username']          = $this->member['member_name'];
-		$user_info['name']              = $this->member['real_name'];
-		$user_info['email']             = $this->member['email_address'];
-		$user_info['is_guest']          = false;
-		$user_info['groups']            = $groups;
-		$user_info['is_admin']          = in_array(1, $groups, true);
-		$user_info['possibly_robot']    = false;
-		$user_info['ignoreboards']      = [];
-		$user_info['permissions']       = [];
+		$user_info['id']             = (int) $this->member['id_member'];
+		$user_info['username']       = $this->member['member_name'];
+		$user_info['name']           = $this->member['real_name'];
+		$user_info['email']          = $this->member['email_address'];
+		$user_info['is_guest']       = false;
+		$user_info['groups']         = $groups;
+		$user_info['is_admin']       = in_array(1, $groups, true);
+		$user_info['possibly_robot'] = false;
+		$user_info['ignoreboards']   = [];
+		$user_info['permissions']    = [];
+
 		$user_info['can_manage_boards'] = $user_info['is_admin']
 			|| (! empty($modSettings['board_manager_groups'])
 				&& count(array_intersect($groups, explode(',', (string) $modSettings['board_manager_groups']))) > 0);

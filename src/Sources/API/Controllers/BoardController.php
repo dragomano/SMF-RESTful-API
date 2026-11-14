@@ -21,10 +21,37 @@ if (! defined('SMF'))
 	die('No direct access...');
 
 /**
- * Read access to boards, filtered by what the authenticated member may see.
+ * Read and manage boards.
  */
 class BoardController extends AbstractController
 {
+	/**
+	 * Fields a client may write, mapped onto their {db_prefix}boards column.
+	 * Everything goes through SMF's modifyBoard(), which expects its own option
+	 * names (board_name, access_groups, posts_count, ...), so save() translates.
+	 */
+	private const WRITABLE = [
+		'name'               => ['type' => 'string', 'column' => 'name', 'length' => 255],
+		'description'        => ['type' => 'raw', 'column' => 'description'],
+		'category'           => ['type' => 'int', 'column' => 'id_cat', 'min' => 1, 'optional' => true],
+		'parent'             => ['type' => 'int', 'column' => 'id_parent', 'optional' => true],
+		'order'              => ['type' => 'int', 'column' => 'board_order', 'optional' => true],
+		'id_profile'         => ['type' => 'int', 'column' => 'id_profile', 'min' => 1, 'optional' => true],
+		'id_theme'           => ['type' => 'int', 'column' => 'id_theme', 'optional' => true],
+		'override_theme'     => ['type' => 'bool', 'column' => 'override_theme', 'optional' => true],
+		'count_posts'        => ['type' => 'bool', 'column' => 'count_posts', 'optional' => true],
+		'member_groups'      => ['type' => 'int_list', 'column' => 'member_groups', 'optional' => true],
+		'deny_member_groups' => ['type' => 'int_list', 'column' => 'deny_member_groups', 'optional' => true],
+		'redirect'           => ['type' => 'string', 'column' => 'redirect', 'length' => 255, 'optional' => true],
+	];
+
+	/** SMF column names accepted in place of the API field names. */
+	private const ALIASES = [
+		'id_cat'      => 'category',
+		'id_parent'   => 'parent',
+		'board_order' => 'order',
+	];
+
 	public function index(array $params): Response
 	{
 		$where       = '{query_see_board}';
@@ -55,13 +82,7 @@ class BoardController extends AbstractController
 
 	public function show(array $params): Response
 	{
-		$row = $this->first(
-			(new Query())
-				->from('{db_prefix}boards AS b')
-				->where('{query_see_board} AND b.id_board = {int:id}')
-				->columns('b.id_board, b.id_cat, b.id_parent, b.name, b.description, b.num_topics, b.num_posts, b.board_order')
-				->params(['id' => $this->id($params)])
-		);
+		$row = $this->first($this->boardQuery()->params(['id' => $this->id($params)]));
 
 		// A hidden board is indistinguishable from a missing one on purpose.
 		if ($row === null) {
@@ -82,47 +103,44 @@ class BoardController extends AbstractController
 			throw ApiException::forbidden('You cannot manage boards');
 		}
 
-		$category    = (int) $this->request->input('category', 0);
-		$name        = $this->cleanString($this->request->input('name', ''));
-		$description = $this->cleanString($this->request->input('description', ''));
+		$columns = $this->writableColumns(self::WRITABLE, false, self::ALIASES);
 
-		if ($category <= 0 || $name === '') {
-			throw ApiException::badRequest('Fields "category" and "name" are required');
+		if (($columns['name'] ?? '') === '') {
+			throw ApiException::badRequest('Field "name" is required');
 		}
 
-		// The target category must exist.
-		$exists = $this->exists(
-			(new Query())
-				->from('{db_prefix}categories')
-				->where('id_cat = {int:id}')
-				->params(['id' => $category])
-		);
+		$category = $columns['id_cat'] ?? 0;
 
-		if (! $exists) {
+		if ($category <= 0) {
+			throw ApiException::badRequest('Field "category" is required');
+		}
+
+		if (! $this->categoryExists($category)) {
 			throw ApiException::notFound('Category not found');
 		}
 
-		require_once($sourcedir . '/Subs-Boards.php');
-
-		$id = createBoard([
-			'board_name'        => $name,
-			'board_description' => $description,
+		$boardOptions = [
+			'board_name'        => $columns['name'],
+			'board_description' => $columns['description'] ?? '',
 			'move_to'           => 'bottom',
 			'target_category'   => $category,
-		]);
+		];
+
+		$this->applyBoardOptions($boardOptions, $columns);
+
+		require_once($sourcedir . '/Subs-Boards.php');
+
+		$id = createBoard($boardOptions);
 
 		if (empty($id)) {
 			throw ApiException::badRequest('The board could not be created');
 		}
 
+		$row = $this->first($this->boardQuery()->params(['id' => (int) $id]));
+
 		return $this->response()
 			->status(201)
-			->data([
-				'id'          => $id,
-				'category'    => $category,
-				'name'        => $name,
-				'description' => $description,
-			]);
+			->data($this->transform($row));
 	}
 
 	/**
@@ -175,6 +193,20 @@ class BoardController extends AbstractController
 		return $this->noContent();
 	}
 
+	protected function transform(array $row): array
+	{
+		return [
+			'id'          => (int) $row['id_board'],
+			'category'    => (int) $row['id_cat'],
+			'parent'      => (int) $row['id_parent'],
+			'name'        => $row['name'],
+			'description' => $row['description'],
+			'num_topics'  => (int) $row['num_topics'],
+			'num_posts'   => (int) $row['num_posts'],
+			'order'       => (int) $row['board_order'],
+		];
+	}
+
 	/**
 	 * Shared PUT/PATCH body: validate access, apply the writable fields through
 	 * SMF's modifyBoard(), then answer with the stored board.
@@ -193,7 +225,7 @@ class BoardController extends AbstractController
 			(new Query())
 				->from('{db_prefix}boards')
 				->where('id_board = {int:id}')
-				->columns('id_board, id_cat')
+				->columns('id_board, id_cat, id_parent, board_order')
 				->params(['id' => $id])
 		);
 
@@ -201,9 +233,7 @@ class BoardController extends AbstractController
 			throw ApiException::notFound('Board not found');
 		}
 
-		// "category" is an optional move target for both verbs, so it never
-		// counts toward the required set of a full replace.
-		$fields = $this->writable(['name', 'description'], $full);
+		$columns = $this->writableColumns(self::WRITABLE, $full, self::ALIASES);
 
 		// modifyBoard() refreshes the parsed-description cache for the board's
 		// category and, when the board is not being moved, reads it from
@@ -211,54 +241,223 @@ class BoardController extends AbstractController
 		// an "Undefined array key: old_id_cat" notice.
 		$boardOptions = ['old_id_cat' => (int) $current['id_cat']];
 
-		if (array_key_exists('name', $fields)) {
-			$name = $this->cleanString($fields['name']);
-
-			if ($name === '') {
+		if (array_key_exists('name', $columns)) {
+			if ($columns['name'] === '') {
 				throw ApiException::badRequest('Field "name" cannot be empty');
 			}
 
-			$boardOptions['board_name'] = $name;
+			$boardOptions['board_name'] = $columns['name'];
 		}
 
-		if (array_key_exists('description', $fields)) {
-			$boardOptions['board_description'] = $this->cleanString($fields['description']);
+		if (array_key_exists('description', $columns)) {
+			$boardOptions['board_description'] = $columns['description'];
 		}
 
-		$category = $this->request->input('category');
-		if ($category !== null && (int) $category !== (int) $current['id_cat']) {
-			$category = (int) $category;
-
-			$categoryExists = $this->exists(
-				(new Query())
-					->from('{db_prefix}categories')
-					->where('id_cat = {int:id}')
-					->params(['id' => $category])
-			);
-
-			if (! $categoryExists) {
-				throw ApiException::notFound('Category not found');
-			}
-
-			// modifyBoard() moves a board by dropping it at the bottom of the
-			// target category.
-			$boardOptions['move_to']         = 'bottom';
-			$boardOptions['target_category'] = $category;
-		}
+		$this->applyBoardOptions($boardOptions, $columns, $current);
 
 		require_once($sourcedir . '/Subs-Boards.php');
 
 		modifyBoard($id, $boardOptions);
 
-		$row = $this->first(
-			(new Query())
-				->from('{db_prefix}boards AS b')
-				->where('b.id_board = {int:id}')
-				->columns('b.id_board, b.id_cat, b.id_parent, b.name, b.description, b.num_topics, b.num_posts, b.board_order')
-				->params(['id' => $id])
-		);
+		$row = $this->first($this->boardQuery()->params(['id' => $id]));
 
 		return $this->response()->data($this->transform($row));
+	}
+
+	/**
+	 * Translate the written columns into modifyBoard() options: plain settings
+	 * first, then at most one move (position wins over parent, parent over a
+	 * bare category change), because SMF applies a single move per call.
+	 *
+	 * @param array<string, mixed> $boardOptions
+	 * @param array<string, mixed> $columns
+	 * @param array<string, mixed>|null $current
+	 */
+	private function applyBoardOptions(array &$boardOptions, array $columns, ?array $current = null): void
+	{
+		if (array_key_exists('id_profile', $columns)) {
+			$boardOptions['profile'] = $columns['id_profile'];
+		}
+
+		if (array_key_exists('id_theme', $columns)) {
+			$boardOptions['board_theme'] = $columns['id_theme'];
+		}
+
+		if (array_key_exists('override_theme', $columns)) {
+			$boardOptions['override_theme'] = $columns['override_theme'];
+		}
+
+		// SMF stores the inverse: count_posts = 0 means "this board counts posts".
+		if (array_key_exists('count_posts', $columns)) {
+			$boardOptions['posts_count'] = $columns['count_posts'] ? 0 : 1;
+		}
+
+		if (array_key_exists('redirect', $columns)) {
+			$boardOptions['redirect'] = $columns['redirect'];
+		}
+
+		if (array_key_exists('member_groups', $columns)) {
+			$boardOptions['access_groups'] = $this->groupIdList($columns['member_groups']);
+		}
+
+		if (array_key_exists('deny_member_groups', $columns)) {
+			$boardOptions['deny_groups'] = $this->groupIdList($columns['deny_member_groups']);
+		}
+
+		$category = array_key_exists('id_cat', $columns)
+			? $columns['id_cat']
+			: ($current === null ? null : (int) $current['id_cat']);
+
+		$parent = array_key_exists('id_parent', $columns)
+			? $columns['id_parent']
+			: ($current === null ? 0 : (int) $current['id_parent']);
+
+		if ($current === null) {
+			// Creation: the board lands at the bottom of its category or, when a
+			// parent is given, as the last child of that board.
+			if ($category === null) {
+				throw ApiException::badRequest('Field "category" is required');
+			}
+
+			$this->assertCategoryExists($category);
+
+			if ($parent > 0) {
+				$this->assertParentInCategory($parent, $category);
+
+				$boardOptions['move_to']      = 'child';
+				$boardOptions['target_board'] = $parent;
+			}
+		} elseif ($category !== null && $category !== (int) $current['id_cat']) {
+			$this->assertCategoryExists($category);
+
+			$boardOptions['move_to']         = 'bottom';
+			$boardOptions['target_category'] = $category;
+
+			// A board dropped into another category becomes a root board there.
+			$parent = 0;
+		}
+
+		if (array_key_exists('board_order', $columns) && $category !== null) {
+			$this->moveToPosition($boardOptions, $columns['board_order'], $category, $parent, $current);
+		} elseif ($current !== null && $parent !== (int) $current['id_parent'] && $category !== null) {
+			$this->moveToParent($boardOptions, $parent, $category);
+		}
+	}
+
+	/**
+	 * Place the board at a 0-based position among its siblings (same category
+	 * and parent), which is what the panel's drag-and-drop sends.
+	 *
+	 * @param array<string, mixed> $boardOptions
+	 * @param array<string, mixed>|null $current
+	 */
+	private function moveToPosition(array &$boardOptions, int $order, int $category, int $parent, ?array $current): void
+	{
+		$id       = $current === null ? null : (int) $current['id_board'];
+		$siblings = $this->siblings($category, $parent);
+		$position = null;
+		$others   = [];
+
+		foreach ($siblings as $index => $row) {
+			if ((int) $row['id_board'] === $id) {
+				$position = $index;
+
+				continue;
+			}
+
+			$others[] = (int) $row['id_board'];
+		}
+
+		if ($order > count($others)) {
+			throw ApiException::badRequest(
+				'Field "order" must be a position between 0 and ' . count($others)
+			);
+		}
+
+		// Already there: no move at all.
+		if ($position === $order) {
+			return;
+		}
+
+		if ($order < count($others)) {
+			$boardOptions['move_to']      = 'before';
+			$boardOptions['target_board'] = $others[$order];
+
+			return;
+		}
+
+		if ($others !== []) {
+			$boardOptions['move_to']      = 'after';
+			$boardOptions['target_board'] = $others[count($others) - 1];
+
+			return;
+		}
+
+		// No siblings: a brand new first board in that place.
+		$this->moveToParent($boardOptions, $parent, $category);
+	}
+
+	/**
+	 * Make the board a child of $parent (or a root board of $category for 0).
+	 *
+	 * @param array<string, mixed> $boardOptions
+	 */
+	private function moveToParent(array &$boardOptions, int $parent, int $category): void
+	{
+		if ($parent === 0) {
+			$boardOptions['move_to']         = 'bottom';
+			$boardOptions['target_category'] = $category;
+
+			return;
+		}
+
+		if (! $this->boardExists($parent)) {
+			throw ApiException::notFound('Parent board not found');
+		}
+
+		$this->assertParentInCategory($parent, $category);
+
+		$boardOptions['move_to']      = 'child';
+		$boardOptions['target_board'] = $parent;
+	}
+
+	/**
+	 * Boards that share a category and a parent level, in display order.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function siblings(int $category, int $parent): array
+	{
+		$rows = $this->fetchAll(
+			(new Query())
+				->from('{db_prefix}boards')
+				->columns('id_board, id_parent, board_order')
+				->where('id_cat = {int:category}')
+				->orderBy('board_order, id_board')
+				->params(['category' => $category])
+		);
+
+		return array_values(array_filter(
+			$rows,
+			static fn (array $row): bool => (int) $row['id_parent'] === $parent
+		));
+	}
+
+	/**
+	 * modifyBoard() wants group ids as an array, the API takes "2,7" or [2, 7].
+	 *
+	 * @return array<int, int>
+	 */
+	private function groupIdList(string $value): array
+	{
+		$ids = array_map(
+			intval(...),
+			array_filter(explode(',', $value), static fn (string $id): bool => $id !== ''),
+		);
+
+		sort($ids);
+
+		return $ids;
 	}
 
 	/**
@@ -287,17 +486,44 @@ class BoardController extends AbstractController
 		);
 	}
 
-	protected function transform(array $row): array
+	private function assertCategoryExists(int $id): void
 	{
-		return [
-			'id'          => (int) $row['id_board'],
-			'category'    => (int) $row['id_cat'],
-			'parent'      => (int) $row['id_parent'],
-			'name'        => $row['name'],
-			'description' => $row['description'],
-			'num_topics'  => (int) $row['num_topics'],
-			'num_posts'   => (int) $row['num_posts'],
-			'order'       => (int) $row['board_order'],
-		];
+		if (! $this->categoryExists($id)) {
+			throw ApiException::notFound('Category not found');
+		}
+	}
+
+	/**
+	 * A parent board has to live in the same category as the board itself,
+	 * otherwise SMF would silently reparent the whole tree.
+	 */
+	private function assertParentInCategory(int $parent, int $category): void
+	{
+		$row = $this->first(
+			(new Query())
+				->from('{db_prefix}boards')
+				->where('id_board = {int:id}')
+				->columns('id_board, id_cat')
+				->params(['id' => $parent])
+		);
+
+		if ($row === null) {
+			throw ApiException::notFound('Parent board not found');
+		}
+
+		if ((int) $row['id_cat'] !== $category) {
+			throw ApiException::badRequest('The parent board must be in the same category');
+		}
+	}
+
+	/**
+	 * The columns a board answer is built from.
+	 */
+	private function boardQuery(): Query
+	{
+		return (new Query())
+			->from('{db_prefix}boards AS b')
+			->where('{query_see_board} AND b.id_board = {int:id}')
+			->columns('b.id_board, b.id_cat, b.id_parent, b.name, b.description, b.num_topics, b.num_posts, b.board_order');
 	}
 }

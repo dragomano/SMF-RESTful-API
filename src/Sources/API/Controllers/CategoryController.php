@@ -21,10 +21,25 @@ if (! defined('SMF'))
 	die('No direct access...');
 
 /**
- * Read and create forum categories — the containers that hold boards.
+ * Read and manage forum categories — the containers that hold boards.
  */
 class CategoryController extends AbstractController
 {
+	/**
+	 * Fields a client may write, mapped onto their {db_prefix}categories column.
+	 * "order" is the 0-based position from cat_order; SMF only accepts relative
+	 * moves, so save() resolves it into modifyCategory()'s "move_after" id.
+	 */
+	private const WRITABLE = [
+		'name'         => ['type' => 'string', 'column' => 'name', 'length' => 255],
+		'description'  => ['type' => 'raw', 'column' => 'description'],
+		'order'        => ['type' => 'int', 'column' => 'cat_order', 'optional' => true],
+		'can_collapse' => ['type' => 'bool', 'column' => 'can_collapse', 'optional' => true],
+	];
+
+	/** SMF column names accepted in place of the API field names. */
+	private const ALIASES = ['cat_order' => 'order'];
+
 	public function index(array $params): Response
 	{
 		// Only categories that hold at least one board the member may see.
@@ -37,7 +52,7 @@ class CategoryController extends AbstractController
 					WHERE b.id_cat = c.id_cat
 						AND {query_see_board}
 				)')
-			->columns('c.id_cat, c.name, c.description, c.cat_order')
+			->columns('c.id_cat, c.name, c.description, c.cat_order, c.can_collapse')
 			->orderBy('c.cat_order');
 
 		return $this->paginate($query);
@@ -51,7 +66,7 @@ class CategoryController extends AbstractController
 			(new Query())
 				->from('{db_prefix}categories')
 				->where('id_cat = {int:id}')
-				->columns('id_cat, name, description, cat_order')
+				->columns('id_cat, name, description, cat_order, can_collapse')
 				->params(['id' => $id])
 		);
 
@@ -77,31 +92,49 @@ class CategoryController extends AbstractController
 			throw ApiException::forbidden('You cannot manage categories');
 		}
 
-		$name        = $this->cleanString($this->request->input('name', ''));
-		$description = $this->cleanString($this->request->input('description', ''));
+		$columns = $this->writableColumns(self::WRITABLE, false, self::ALIASES);
 
-		if ($name === '') {
+		if (($columns['name'] ?? '') === '') {
 			throw ApiException::badRequest('Field "name" is required');
+		}
+
+		$catOptions = [
+			'cat_name' => $columns['name'],
+			'cat_desc' => $columns['description'] ?? '',
+		];
+
+		if (array_key_exists('can_collapse', $columns)) {
+			$catOptions['is_collapsible'] = $columns['can_collapse'];
+		}
+
+		if (array_key_exists('cat_order', $columns)) {
+			$moveAfter = $this->moveAfter($columns['cat_order']);
+
+			if ($moveAfter !== null) {
+				$catOptions['move_after'] = $moveAfter;
+			}
 		}
 
 		require_once($sourcedir . '/Subs-Categories.php');
 
-		$id = createCategory([
-			'cat_name' => $name,
-			'cat_desc' => $description,
-		]);
+		$id = (int) createCategory($catOptions);
+
+		$row = $this->first(
+			(new Query())
+				->from('{db_prefix}categories')
+				->where('id_cat = {int:id}')
+				->columns('id_cat, name, description, cat_order, can_collapse')
+				->params(['id' => $id])
+		);
 
 		return $this->response()
 			->status(201)
-			->data([
-				'id'          => (int) $id,
-				'name'        => $name,
-				'description' => $description,
-			]);
+			->data($this->transform($row));
 	}
 
 	/**
-	 * Fully replace a category (PUT): every writable field is required.
+	 * Fully replace a category (PUT): "name" and "description" are required,
+	 * every other writable field is optional.
 	 */
 	public function replace(array $params): Response
 	{
@@ -150,6 +183,17 @@ class CategoryController extends AbstractController
 		return $this->noContent();
 	}
 
+	protected function transform(array $row): array
+	{
+		return [
+			'id'           => (int) $row['id_cat'],
+			'name'         => $row['name'],
+			'description'  => $row['description'],
+			'order'        => (int) $row['cat_order'],
+			'can_collapse' => (bool) $row['can_collapse'],
+		];
+	}
+
 	/**
 	 * Shared PUT/PATCH body: validate access, apply the writable fields through
 	 * SMF's modifyCategory(), then answer with the stored category.
@@ -168,21 +212,32 @@ class CategoryController extends AbstractController
 			throw ApiException::notFound('Category not found');
 		}
 
-		$fields     = $this->writable(['name', 'description'], $full);
+		$columns    = $this->writableColumns(self::WRITABLE, $full, self::ALIASES);
 		$catOptions = [];
 
-		if (array_key_exists('name', $fields)) {
-			$name = $this->cleanString($fields['name']);
-
-			if ($name === '') {
+		if (array_key_exists('name', $columns)) {
+			if ($columns['name'] === '') {
 				throw ApiException::badRequest('Field "name" cannot be empty');
 			}
 
-			$catOptions['cat_name'] = $name;
+			$catOptions['cat_name'] = $columns['name'];
 		}
 
-		if (array_key_exists('description', $fields)) {
-			$catOptions['cat_desc'] = $this->cleanString($fields['description']);
+		if (array_key_exists('description', $columns)) {
+			$catOptions['cat_desc'] = $columns['description'];
+		}
+
+		if (array_key_exists('can_collapse', $columns)) {
+			$catOptions['is_collapsible'] = $columns['can_collapse'];
+		}
+
+		if (array_key_exists('cat_order', $columns)) {
+			$moveAfter = $this->moveAfter($columns['cat_order'], $id);
+
+			// null means the category already sits at that position.
+			if ($moveAfter !== null) {
+				$catOptions['move_after'] = $moveAfter;
+			}
 		}
 
 		require_once($sourcedir . '/Subs-Categories.php');
@@ -193,11 +248,54 @@ class CategoryController extends AbstractController
 			(new Query())
 				->from('{db_prefix}categories')
 				->where('id_cat = {int:id}')
-				->columns('id_cat, name, description, cat_order')
+				->columns('id_cat, name, description, cat_order, can_collapse')
 				->params(['id' => $id])
 		);
 
 		return $this->response()->data($this->transform($row));
+	}
+
+	/**
+	 * Resolve a 0-based position into modifyCategory()'s "move_after" id.
+	 *
+	 * SMF only knows relative moves, so the position is resolved against the
+	 * current list of categories; 0 means "move to the top". When $id is given
+	 * and the category already sits at that position, null is returned so the
+	 * caller can skip a pointless reorder (which also reorders every board).
+	 */
+	private function moveAfter(int $order, ?int $id = null): ?int
+	{
+		$categories = $this->fetchAll(
+			(new Query())
+				->from('{db_prefix}categories')
+				->columns('id_cat')
+				->orderBy('cat_order, id_cat')
+		);
+
+		$position = null;
+		$others   = [];
+
+		foreach ($categories as $index => $row) {
+			if ((int) $row['id_cat'] === $id) {
+				$position = $index;
+
+				continue;
+			}
+
+			$others[] = (int) $row['id_cat'];
+		}
+
+		if ($order > count($others)) {
+			throw ApiException::badRequest(
+				'Field "order" must be a position between 0 and ' . count($others)
+			);
+		}
+
+		if ($position === $order) {
+			return null;
+		}
+
+		return $order === 0 ? 0 : $others[$order - 1];
 	}
 
 	/**
@@ -235,15 +333,5 @@ class CategoryController extends AbstractController
 			'num_posts'   => (int) $row['num_posts'],
 			'order'       => (int) $row['board_order'],
 		], $rows);
-	}
-
-	protected function transform(array $row): array
-	{
-		return [
-			'id'          => (int) $row['id_cat'],
-			'name'        => $row['name'],
-			'description' => $row['description'],
-			'order'       => (int) $row['cat_order'],
-		];
 	}
 }

@@ -17,32 +17,39 @@ final class PostControllerTest
     // A message row with every value as a string, so a dropped (int)/(bool)
     // cast produces an observably different type in the transformed output.
     private const MESSAGE_ROW = [
-        'id_msg'        => '100',
-        'id_topic'      => '7',
-        'id_board'      => '2',
-        'id_member'     => '9',
-        'poster_name'   => 'Poster',
-        'poster_time'   => '1234',
-        'subject'       => 'Re: Topic',
-        'body'          => '[i]reply[/i]',
-        'approved'      => '1',
-        'modified_time' => '0',
-        'modified_name' => '',
+        'id_msg'          => '100',
+        'id_topic'        => '7',
+        'id_board'        => '2',
+        'id_member'       => '9',
+        'poster_name'     => 'Poster',
+        'poster_email'    => 'poster@example.test',
+        'poster_time'     => '1234',
+        'subject'         => 'Re: Topic',
+        'body'            => '[i]reply[/i]',
+        'icon'            => 'xx',
+        'smileys_enabled' => '1',
+        'approved'        => '1',
+        'modified_time'   => '0',
+        'modified_name'   => '',
+        'modified_reason' => '',
     ];
 
     // The exact transform() output for MESSAGE_ROW, with the correct types.
     private const MESSAGE_PAYLOAD = [
-        'id'            => 100,
-        'topic'         => 7,
-        'board'         => 2,
-        'subject'       => 'Re: Topic',
-        'author'        => ['id' => 9, 'name' => 'Poster'],
-        'poster_time'   => 1234,
-        'modified_time' => 0,
-        'modified_name' => '',
-        'approved'      => true,
-        'body'          => 'parsed:[i]reply[/i]',
-        'body_raw'      => '[i]reply[/i]',
+        'id'              => 100,
+        'topic'           => 7,
+        'board'           => 2,
+        'subject'         => 'Re: Topic',
+        'author'          => ['id' => 9, 'name' => 'Poster', 'email' => 'poster@example.test'],
+        'poster_time'     => 1234,
+        'modified_time'   => 0,
+        'modified_name'   => '',
+        'modified_reason' => '',
+        'icon'            => 'xx',
+        'smileys_enabled' => true,
+        'approved'        => true,
+        'body'            => 'parsed:[i]reply[/i]',
+        'body_raw'        => '[i]reply[/i]',
     ];
 
     // ----- index / show / transform ----------------------------------------
@@ -50,6 +57,7 @@ final class PostControllerTest
     public function indexReturnsThePostsOfAvisibleTopic(): void
     {
         Environment::reset();
+
         $GLOBALS['api_total'] = 1;
         $GLOBALS['api_rows']  = [
             ['id_topic' => '7', 'approved' => '1'],
@@ -74,9 +82,11 @@ final class PostControllerTest
     public function indexForAnAdminSkipsTheApprovalFilter(): void
     {
         Environment::reset();
+
         $GLOBALS['user_info']['is_admin'] = true;
-        $GLOBALS['api_total'] = 1;
-        $GLOBALS['api_rows']  = [
+        $GLOBALS['api_total']             = 1;
+
+        $GLOBALS['api_rows'] = [
             ['id_topic' => '7', 'approved' => '0'],
             self::MESSAGE_ROW,
         ];
@@ -93,6 +103,7 @@ final class PostControllerTest
     public function indexHidesAnUnapprovedTopicFromNonAdministrators(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows'] = [['id_topic' => '7', 'approved' => '0']];
 
         $exception = $this->error(fn () => (new PostController(Environment::request()))->index(['topic_id' => '7']));
@@ -103,6 +114,7 @@ final class PostControllerTest
     public function showReturnsApost(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows'] = [self::MESSAGE_ROW];
 
         $response = (new PostController(Environment::request()))->show(['id' => '100']);
@@ -118,6 +130,7 @@ final class PostControllerTest
     public function showHidesAnUnapprovedPostFromNonAdministrators(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows'] = [['approved' => '0'] + self::MESSAGE_ROW];
 
         $exception = $this->error(fn () => (new PostController(Environment::request()))->show(['id' => '100']));
@@ -130,11 +143,14 @@ final class PostControllerTest
     public function storePostsAreplyOnBehalfOfTheMember(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['post_reply_any'];
         $GLOBALS['api_new_msg_id']  = '500'; // string, so the (int) cast in the reply is observable
         $GLOBALS['user_info']['id'] = '9';   // string, so the poster-id cast is observable
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => '9', 'subject' => 'Topic'],
+            self::MESSAGE_ROW,
         ];
 
         $request  = Environment::request('POST', ['topic' => '7', 'body' => '  My reply  ']);
@@ -142,7 +158,8 @@ final class PostControllerTest
         $state    = Environment::readResponse($response);
 
         Assert::same($state['status'], 201);
-        Assert::same($state['payload']['data'], ['id' => 500, 'topic' => 7, 'board' => 2, 'approved' => true]);
+        // The new reply is read back through the same query as show().
+        Assert::same($state['payload']['data'], self::MESSAGE_PAYLOAD);
 
         // The whole msgOptions handed to createPost, recorded before the id is set.
         Assert::same($GLOBALS['api_create_post'][0][0], [
@@ -165,12 +182,15 @@ final class PostControllerTest
     public function storeDoesNotDoublePrefixASubjectThatAlreadyStartsWithRe(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['post_reply_any'];
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => '9', 'subject' => 'Re: Existing'],
+            self::MESSAGE_ROW,
         ];
 
-        $request  = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
+        $request = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
         (new PostController($request))->store([]);
 
         Assert::same($GLOBALS['api_create_post'][0][0]['subject'], 'Re: Existing');
@@ -179,10 +199,13 @@ final class PostControllerTest
     public function storeFallsBackToTheMembersOwnIpBeforeTheServerAddress(): void
     {
         Environment::reset();
-        $GLOBALS['api_permissions']  = ['post_reply_any'];
-        $GLOBALS['user_info']['ip']  = '10.0.0.5';
+
+        $GLOBALS['api_permissions'] = ['post_reply_any'];
+        $GLOBALS['user_info']['ip'] = '10.0.0.5';
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => '9', 'subject' => 'Topic'],
+            self::MESSAGE_ROW,
         ];
 
         $request  = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
@@ -194,10 +217,13 @@ final class PostControllerTest
     public function storeQueuesForApprovalWhenTheMemberHoldsOnlyUnapprovedRights(): void
     {
         Environment::reset();
+
         $GLOBALS['modSettings']['postmod_active'] = 1;
-        $GLOBALS['api_permissions'] = ['post_unapproved_replies_any'];
+        $GLOBALS['api_permissions']               = ['post_unapproved_replies_any'];
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => '5', 'subject' => 'Topic'],
+            ['approved' => '0'] + self::MESSAGE_ROW,
         ];
 
         $request  = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
@@ -212,10 +238,13 @@ final class PostControllerTest
     public function storeApprovesImmediatelyWhenReplyAnyWithPostmodActive(): void
     {
         Environment::reset();
+
         $GLOBALS['modSettings']['postmod_active'] = 1;
-        $GLOBALS['api_permissions'] = ['post_reply_any'];
+        $GLOBALS['api_permissions']               = ['post_reply_any'];
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => '5', 'subject' => 'Topic'],
+            self::MESSAGE_ROW,
         ];
 
         $request  = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
@@ -227,9 +256,12 @@ final class PostControllerTest
     public function storeApprovesImmediatelyWhenPostmodIsInactive(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['post_unapproved_replies_any'];
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => '5', 'subject' => 'Topic'],
+            self::MESSAGE_ROW,
         ];
 
         $request  = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
@@ -241,11 +273,15 @@ final class PostControllerTest
     public function storeApprovesAstarterUsingReplyOwnWithPostmodActive(): void
     {
         Environment::reset();
+
         $GLOBALS['modSettings']['postmod_active'] = 1;
+
         $GLOBALS['api_permissions'] = ['post_reply_own'];
         $GLOBALS['user_info']['id'] = 9; // int; starter id is a string, so both casts matter
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => '9', 'subject' => 'Topic'],
+            self::MESSAGE_ROW,
         ];
 
         $request  = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
@@ -257,10 +293,13 @@ final class PostControllerTest
     public function storeAllowsAstarterUsingUnapprovedRepliesOwn(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['post_unapproved_replies_own'];
         $GLOBALS['user_info']['id'] = '9'; // string; starter id is an int, so both casts matter
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => 9, 'subject' => 'Topic'],
+            self::MESSAGE_ROW,
         ];
 
         $request  = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
@@ -272,9 +311,12 @@ final class PostControllerTest
     public function storeAllowsUnapprovedRepliesAnyForANonStarter(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['post_unapproved_replies_any'];
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => '5', 'subject' => 'Topic'],
+            self::MESSAGE_ROW,
         ];
 
         $request  = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
@@ -286,9 +328,12 @@ final class PostControllerTest
     public function storeRefusesAstarterWhoHoldsNoReplyPermission(): void
     {
         Environment::reset();
+
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => '9', 'subject' => 'Topic'],
+            self::MESSAGE_ROW,
         ];
 
         $request   = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
@@ -300,10 +345,13 @@ final class PostControllerTest
     public function storeRefusesReplyOwnForANonStarter(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['post_reply_own'];
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => '5', 'subject' => 'Topic'],
+            self::MESSAGE_ROW,
         ];
 
         $request   = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
@@ -315,9 +363,12 @@ final class PostControllerTest
     public function storeRefusesAlockedTopicForOrdinaryMembers(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['post_reply_any'];
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '1', 'id_member_started' => '9', 'subject' => 'Topic'],
+            self::MESSAGE_ROW,
         ];
 
         $request   = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
@@ -329,8 +380,10 @@ final class PostControllerTest
     public function storeIsRefusedWhenTheMemberCannotReply(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => '9', 'subject' => 'Topic'],
+            self::MESSAGE_ROW,
         ];
 
         $request   = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
@@ -353,6 +406,8 @@ final class PostControllerTest
     {
         Environment::reset();
 
+        $GLOBALS['api_rows'] = [self::MESSAGE_ROW];
+
         $request   = Environment::request('POST', ['body' => 'orphan']);
         $exception = $this->error(fn () => (new PostController($request))->store([]));
 
@@ -364,13 +419,16 @@ final class PostControllerTest
     public function updateEditsTheBodyAndReturnsTheRefreshedPost(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['modify_any'];
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1', 'body' => 'stored body'],
             [
-                'id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_name' => 'Poster',
-                'poster_time' => '1234', 'subject' => 'Edited subject', 'body' => 'edited', 'approved' => '1',
-                'modified_time' => '0', 'modified_name' => 'Tester',
+                'id_msg'        => '100',  'id_topic'        => '7',              'id_board' => '2',      'id_member'       => '9', 'poster_name' => 'Poster',
+                'poster_time'   => '1234', 'subject'         => 'Edited subject', 'body'     => 'edited', 'approved'        => '1',
+                'modified_time' => '0',    'modified_name'   => 'Tester',
+                'poster_email'  => null,   'modified_reason' => null,             'icon'     => null,     'smileys_enabled' => '0',
             ],
         ];
 
@@ -381,8 +439,9 @@ final class PostControllerTest
         // The whole refreshed payload, so every response cast is pinned.
         Assert::same($state['payload']['data'], [
             'id' => 100, 'topic' => 7, 'board' => 2, 'subject' => 'Edited subject',
-            'author' => ['id' => 9, 'name' => 'Poster'],
+            'author' => ['id' => 9, 'name' => 'Poster', 'email' => null],
             'poster_time' => 1234, 'modified_time' => 0, 'modified_name' => 'Tester',
+            'modified_reason' => null, 'icon' => null, 'smileys_enabled' => false,
             'approved' => true, 'body' => 'parsed:edited', 'body_raw' => 'edited',
         ]);
 
@@ -393,7 +452,7 @@ final class PostControllerTest
         Assert::same($msg['modify_name'], 'Tester');
         Assert::same($msg['modify_reason'], 'cleanup');
         Assert::true(is_int($msg['modify_time']));
-        Assert::same($GLOBALS['api_modify_post'][0][1], ['id' => 7, 'board' => 2]);
+        Assert::same($GLOBALS['api_modify_post'][0][1], ['id' => 7, 'board' => 2, 'poll' => null]);
         Assert::same($GLOBALS['api_modify_post'][0][2], ['id' => 9]);
 
         Assert::same($GLOBALS['api_preparsecode'], ['edited']);
@@ -404,8 +463,9 @@ final class PostControllerTest
     public function updateIsRefusedForAnotherMembersPost(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1', 'body' => 'stored body'],
         ];
 
         $request   = Environment::request('PATCH', ['body' => 'edited']);
@@ -417,8 +477,9 @@ final class PostControllerTest
     public function updateHidesAnotherMembersUnapprovedPost(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '0'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '0', 'body' => 'stored body'],
         ];
 
         $request   = Environment::request('PATCH', ['body' => 'edited']);
@@ -430,9 +491,11 @@ final class PostControllerTest
     public function updateFindsAnApprovedPostForANonAuthorWithModifyAny(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['modify_any'];
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1', 'body' => 'stored body'],
             ['body' => 'edited'] + self::MESSAGE_ROW,
         ];
 
@@ -447,10 +510,12 @@ final class PostControllerTest
         // Member id string, author id int: the "found" and "isAuthor" checks
         // both depend on the (int) casts on both sides of the comparison.
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['modify_own'];
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '0'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '0', 'body' => 'stored body'],
             ['body' => 'edited'] + self::MESSAGE_ROW,
         ];
 
@@ -465,10 +530,12 @@ final class PostControllerTest
         // Member id int, author id string: mirrors the previous test to pin the
         // cast on the other operand.
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['modify_own'];
         $GLOBALS['user_info']['id'] = '9';
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => 9, 'poster_time' => '1234', 'approved' => '0'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => 9, 'poster_time' => '1234', 'approved' => '0', 'body' => 'stored body'],
             ['body' => 'edited'] + self::MESSAGE_ROW,
         ];
 
@@ -481,9 +548,11 @@ final class PostControllerTest
     public function updateIsRefusedForAnAuthorWithoutTheModifyOwnPermission(): void
     {
         Environment::reset();
+
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1', 'body' => 'stored body'],
         ];
 
         $request   = Environment::request('PATCH', ['body' => 'edited']);
@@ -495,10 +564,12 @@ final class PostControllerTest
     public function updateIsRefusedForANonAuthorHoldingOnlyModifyOwn(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['modify_own'];
         $GLOBALS['user_info']['id'] = 0;
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1', 'body' => 'stored body'],
         ];
 
         $request   = Environment::request('PATCH', ['body' => 'edited']);
@@ -510,10 +581,12 @@ final class PostControllerTest
     public function updateLetsTheAuthorEditWithModifyOwn(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['modify_own'];
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1', 'body' => 'stored body'],
             ['body' => 'edited'] + self::MESSAGE_ROW,
         ];
 
@@ -526,6 +599,7 @@ final class PostControllerTest
     public function replaceRejectsAmissingPost(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['modify_any'];
 
         $request   = Environment::request('PUT', ['body' => 'edited']);
@@ -536,23 +610,12 @@ final class PostControllerTest
 
     // ----- destroy ---------------------------------------------------------
 
-    /**
-     * A row as destroy()'s query returns it. Every value is a string so the
-     * (int) casts are observable; override per case.
-     */
-    private function deleteRow(array $over = []): array
-    {
-        return $over + [
-            'id_msg' => '101', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1',
-            'id_board' => '2', 'id_first_msg' => '100', 'id_member_started' => '9', 'num_replies' => '3',
-        ];
-    }
-
     public function destroyRemovesAreply(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_any'];
-        $GLOBALS['api_rows'] = [$this->deleteRow()];
+        $GLOBALS['api_rows']        = [$this->deleteRow()];
 
         $response = (new PostController(Environment::request('DELETE')))->destroy(['id' => '101']);
 
@@ -564,8 +627,9 @@ final class PostControllerTest
     public function destroyRejectsDeletingTheFirstPostWhileTheTopicHasReplies(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_any', 'remove_any'];
-        $GLOBALS['api_rows'] = [$this->deleteRow(['id_msg' => '100', 'id_first_msg' => '100', 'num_replies' => '3'])];
+        $GLOBALS['api_rows']        = [$this->deleteRow(['id_msg' => '100', 'id_first_msg' => '100', 'num_replies' => '3'])];
 
         $exception = $this->error(fn () => (new PostController(Environment::request('DELETE')))->destroy(['id' => '100']));
 
@@ -575,8 +639,9 @@ final class PostControllerTest
     public function destroyDeletesAsinglePostTopicWhenItHasNoReplies(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_any', 'remove_any'];
-        $GLOBALS['api_rows'] = [$this->deleteRow(['id_msg' => '100', 'id_first_msg' => '100', 'num_replies' => '0'])];
+        $GLOBALS['api_rows']        = [$this->deleteRow(['id_msg' => '100', 'id_first_msg' => '100', 'num_replies' => '0'])];
 
         $response = (new PostController(Environment::request('DELETE')))->destroy(['id' => '100']);
 
@@ -587,9 +652,10 @@ final class PostControllerTest
     public function destroyHidesAnotherMembersUnapprovedPost(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_any'];
         $GLOBALS['user_info']['id'] = 0;
-        $GLOBALS['api_rows'] = [$this->deleteRow(['approved' => '0', 'id_member' => '9'])];
+        $GLOBALS['api_rows']        = [$this->deleteRow(['approved' => '0', 'id_member' => '9'])];
 
         $exception = $this->error(fn () => (new PostController(Environment::request('DELETE')))->destroy(['id' => '101']));
 
@@ -599,9 +665,10 @@ final class PostControllerTest
     public function destroyFindsAnApprovedPostOfAnotherMember(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_any'];
         $GLOBALS['user_info']['id'] = 0;
-        $GLOBALS['api_rows'] = [$this->deleteRow(['approved' => '1', 'id_member' => '9'])];
+        $GLOBALS['api_rows']        = [$this->deleteRow(['approved' => '1', 'id_member' => '9'])];
 
         $response = (new PostController(Environment::request('DELETE')))->destroy(['id' => '101']);
 
@@ -612,9 +679,10 @@ final class PostControllerTest
     {
         // Member id string, author id int: pins the casts in the "found" check.
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_any'];
         $GLOBALS['user_info']['id'] = 9;
-        $GLOBALS['api_rows'] = [$this->deleteRow(['approved' => '0', 'id_member' => '9'])];
+        $GLOBALS['api_rows']        = [$this->deleteRow(['approved' => '0', 'id_member' => '9'])];
 
         $response = (new PostController(Environment::request('DELETE')))->destroy(['id' => '101']);
 
@@ -625,9 +693,10 @@ final class PostControllerTest
     {
         // Member id int, author id string: pins the cast on the other operand.
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_any'];
         $GLOBALS['user_info']['id'] = '9';
-        $GLOBALS['api_rows'] = [$this->deleteRow(['approved' => '0', 'id_member' => 9])];
+        $GLOBALS['api_rows']        = [$this->deleteRow(['approved' => '0', 'id_member' => 9])];
 
         $response = (new PostController(Environment::request('DELETE')))->destroy(['id' => '101']);
 
@@ -637,8 +706,9 @@ final class PostControllerTest
     public function destroyIsRefusedWithoutPermission(): void
     {
         Environment::reset();
+
         $GLOBALS['user_info']['id'] = 0;
-        $GLOBALS['api_rows'] = [$this->deleteRow()];
+        $GLOBALS['api_rows']        = [$this->deleteRow()];
 
         $exception = $this->error(fn () => (new PostController(Environment::request('DELETE')))->destroy(['id' => '101']));
 
@@ -649,9 +719,10 @@ final class PostControllerTest
     {
         // Author (member id string, author id int), not the topic starter.
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_own'];
         $GLOBALS['user_info']['id'] = 9;
-        $GLOBALS['api_rows'] = [$this->deleteRow(['id_member' => '9', 'id_member_started' => '5'])];
+        $GLOBALS['api_rows']        = [$this->deleteRow(['id_member' => '9', 'id_member_started' => '5'])];
 
         $response = (new PostController(Environment::request('DELETE')))->destroy(['id' => '101']);
 
@@ -662,8 +733,9 @@ final class PostControllerTest
     {
         // Starter (member started id string, author id int) but not the author.
         Environment::reset();
+
         $GLOBALS['user_info']['id'] = 9;
-        $GLOBALS['api_rows'] = [$this->deleteRow(['id_member' => '5', 'id_member_started' => '9'])];
+        $GLOBALS['api_rows']        = [$this->deleteRow(['id_member' => '5', 'id_member_started' => '9'])];
 
         $exception = $this->error(fn () => (new PostController(Environment::request('DELETE')))->destroy(['id' => '101']));
 
@@ -673,9 +745,10 @@ final class PostControllerTest
     public function destroyLetsAstarterDeleteAreplyWithDeleteReplies(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_replies'];
         $GLOBALS['user_info']['id'] = 9;
-        $GLOBALS['api_rows'] = [$this->deleteRow(['id_member' => '5', 'id_member_started' => '9'])];
+        $GLOBALS['api_rows']        = [$this->deleteRow(['id_member' => '5', 'id_member_started' => '9'])];
 
         $response = (new PostController(Environment::request('DELETE')))->destroy(['id' => '101']);
 
@@ -685,8 +758,10 @@ final class PostControllerTest
     public function destroyRefusesTheFirstPostForANonAuthorWithoutRemovePermission(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_any'];
         $GLOBALS['user_info']['id'] = 0;
+
         $GLOBALS['api_rows'] = [$this->deleteRow([
             'id_msg' => '100', 'id_first_msg' => '100', 'num_replies' => '0', 'id_member' => '9',
         ])];
@@ -700,8 +775,10 @@ final class PostControllerTest
     {
         // Author (member id int, author id string) removing a single-post topic.
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_any', 'remove_own'];
         $GLOBALS['user_info']['id'] = '9';
+
         $GLOBALS['api_rows'] = [$this->deleteRow([
             'id_msg' => '100', 'id_first_msg' => '100', 'num_replies' => '0', 'id_member' => 9,
         ])];
@@ -714,8 +791,10 @@ final class PostControllerTest
     public function destroyRefusesTheAuthorsFirstPostWithoutRemovePermission(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_any'];
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['api_rows'] = [$this->deleteRow([
             'id_msg' => '100', 'id_first_msg' => '100', 'num_replies' => '0', 'id_member' => '9',
         ])];
@@ -731,10 +810,12 @@ final class PostControllerTest
         // hidden by the visibility check. The admin holds delete_replies and is
         // the starter, but the reply is unapproved and they cannot approve it.
         Environment::reset();
-        $GLOBALS['api_permissions'] = ['delete_replies'];
+
+        $GLOBALS['api_permissions']               = ['delete_replies'];
         $GLOBALS['modSettings']['postmod_active'] = 1;
-        $GLOBALS['user_info']['id'] = 9;
-        $GLOBALS['user_info']['is_admin'] = true;
+        $GLOBALS['user_info']['id']               = 9;
+        $GLOBALS['user_info']['is_admin']         = true;
+
         $GLOBALS['api_rows'] = [$this->deleteRow([
             'approved' => '0', 'id_member' => '5', 'id_member_started' => '9',
         ])];
@@ -749,10 +830,12 @@ final class PostControllerTest
         // Same as above but approved: the pending gate must not fire. Member
         // started id int, author id string to pin the isStarter casts.
         Environment::reset();
-        $GLOBALS['api_permissions'] = ['delete_replies'];
+
+        $GLOBALS['api_permissions']               = ['delete_replies'];
         $GLOBALS['modSettings']['postmod_active'] = 1;
-        $GLOBALS['user_info']['id'] = '9';
-        $GLOBALS['user_info']['is_admin'] = true;
+        $GLOBALS['user_info']['id']               = '9';
+        $GLOBALS['user_info']['is_admin']         = true;
+
         $GLOBALS['api_rows'] = [$this->deleteRow([
             'approved' => '1', 'id_member' => '5', 'id_member_started' => 9,
         ])];
@@ -765,9 +848,11 @@ final class PostControllerTest
     public function destroyAllowsAnUnapprovedPostWhenPostmodIsInactive(): void
     {
         Environment::reset();
-        $GLOBALS['api_permissions'] = ['delete_replies'];
-        $GLOBALS['user_info']['id'] = 9;
+
+        $GLOBALS['api_permissions']       = ['delete_replies'];
+        $GLOBALS['user_info']['id']       = 9;
         $GLOBALS['user_info']['is_admin'] = true;
+
         $GLOBALS['api_rows'] = [$this->deleteRow([
             'approved' => '0', 'id_member' => '5', 'id_member_started' => '9',
         ])];
@@ -782,9 +867,11 @@ final class PostControllerTest
     public function replaceReportsThatTheBodyFieldIsRequired(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['modify_any'];
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1', 'body' => 'stored body'],
         ];
 
         // A PUT carries no "body": the full-update path rejects it as required.
@@ -798,9 +885,11 @@ final class PostControllerTest
     public function updateReportsThatNoWritableFieldsWereProvided(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['modify_any'];
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1', 'body' => 'stored body'],
         ];
 
         // A PATCH with no writable field is a no-op and rejected as such.
@@ -818,11 +907,15 @@ final class PostControllerTest
         // Starter, postmod active, only "unapproved" rights: the reply is queued
         // (the "$isStarter && post_reply_own" term must stay an AND).
         Environment::reset();
+
         $GLOBALS['modSettings']['postmod_active'] = 1;
+
         $GLOBALS['api_permissions'] = ['post_unapproved_replies_any'];
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['api_rows'] = [
             ['id_board' => '2', 'locked' => '0', 'id_member_started' => '9', 'subject' => 'Topic'],
+            ['approved' => '0'] + self::MESSAGE_ROW,
         ];
 
         $request  = Environment::request('POST', ['topic' => '7', 'body' => 'My reply']);
@@ -836,11 +929,14 @@ final class PostControllerTest
     public function saveAllowsAnAuthorEditingJustInsideTheEditWindow(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['modify_own'];
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['modSettings']['edit_disable_time'] = 10; // 10 * 60 = 600s window
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => (string) (time() - 595), 'approved' => '1'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => (string) (time() - 595), 'approved' => '1', 'body' => 'stored body'],
             ['body' => 'edited'] + self::MESSAGE_ROW,
         ];
 
@@ -853,11 +949,14 @@ final class PostControllerTest
     public function saveRefusesAnAuthorEditingJustOutsideTheEditWindow(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['modify_own'];
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['modSettings']['edit_disable_time'] = 10;
+
         $GLOBALS['api_rows'] = [
-            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => (string) (time() - 605), 'approved' => '1'],
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => (string) (time() - 605), 'approved' => '1', 'body' => 'stored body'],
         ];
 
         $request   = Environment::request('PATCH', ['body' => 'edited']);
@@ -871,9 +970,12 @@ final class PostControllerTest
     public function destroyAllowsTheAuthorDeletingJustInsideTheEditWindow(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_own'];
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['modSettings']['edit_disable_time'] = 10;
+
         $GLOBALS['api_rows'] = [$this->deleteRow([
             'id_member' => '9', 'id_member_started' => '5', 'poster_time' => (string) (time() - 595),
         ])];
@@ -886,9 +988,12 @@ final class PostControllerTest
     public function destroyRefusesTheAuthorDeletingJustOutsideTheEditWindow(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_own'];
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['modSettings']['edit_disable_time'] = 10;
+
         $GLOBALS['api_rows'] = [$this->deleteRow([
             'id_member' => '9', 'id_member_started' => '5', 'poster_time' => (string) (time() - 605),
         ])];
@@ -903,8 +1008,10 @@ final class PostControllerTest
         // Author and starter without delete_own: delete_replies saves the
         // request via the second half of the guard on line 441.
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['delete_replies'];
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['api_rows'] = [$this->deleteRow([
             'id_member' => '9', 'id_member_started' => '9',
         ])];
@@ -920,7 +1027,9 @@ final class PostControllerTest
         // branch's guard keeps "$isStarter && delete_replies" an AND, so the
         // missing delete_replies still yields a 403.
         Environment::reset();
+
         $GLOBALS['user_info']['id'] = 9;
+
         $GLOBALS['api_rows'] = [$this->deleteRow([
             'id_member' => '9', 'id_member_started' => '9',
         ])];
@@ -928,6 +1037,135 @@ final class PostControllerTest
         $exception = $this->error(fn () => (new PostController(Environment::request('DELETE')))->destroy(['id' => '101']));
 
         Assert::same($exception->getStatusCode(), 403);
+    }
+
+    public function updateWritesTheIconAndSmileyFlag(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['modify_any'];
+
+        $GLOBALS['api_rows'] = [
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1', 'body' => 'stored body'],
+            self::MESSAGE_ROW,
+        ];
+
+        (new PostController(Environment::request('PATCH', ['icon' => 'wink', 'smileys_enabled' => false])))->update(['id' => '100']);
+
+        Assert::same($GLOBALS['api_modify_post'][0][0]['icon'], 'wink');
+        Assert::same($GLOBALS['api_modify_post'][0][0]['smileys_enabled'], false);
+    }
+
+    public function updateApprovesThePost(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['modify_any', 'approve_posts'];
+        $GLOBALS['user_info']['id'] = 9;
+
+        $GLOBALS['api_rows'] = [
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '0', 'body' => 'stored body'],
+            self::MESSAGE_ROW,
+        ];
+
+        (new PostController(Environment::request('PATCH', ['approved' => true])))->update(['id' => '100']);
+
+        Assert::same($GLOBALS['api_approve_posts'][0], [[100], true]);
+    }
+
+    public function updateWritesThePosterIdentityForModerators(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['modify_any', 'moderate_forum'];
+
+        $GLOBALS['api_rows'] = [
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1', 'body' => 'stored body'],
+            self::MESSAGE_ROW,
+        ];
+
+        (new PostController(Environment::request('PATCH', ['poster_name' => 'Guest', 'poster_time' => 500])))->update(['id' => '100']);
+
+        $update = array_values(array_filter(
+            $GLOBALS['api_queries'],
+            static fn (array $query): bool => str_contains($query['query'], 'SET poster_name'),
+        ));
+
+        Assert::count($update, 1);
+        Assert::same($update[0]['params'], ['id' => 100, 'poster_name' => 'Guest', 'poster_time' => 500]);
+    }
+
+    public function updateRefusesChangingTheAuthorWithoutModerateForum(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['modify_any'];
+
+        $GLOBALS['api_rows'] = [
+            ['id_msg' => '100', 'id_topic' => '7', 'id_board' => '2', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1', 'body' => 'stored body'],
+        ];
+
+        $exception = $this->error(
+            fn () => (new PostController(Environment::request('PATCH', ['poster_name' => 'Guest'])))->update(['id' => '100'])
+        );
+
+        Assert::same($exception->getStatusCode(), 403);
+    }
+
+    /**
+     * A row as destroy()'s query returns it. Every value is a string so the
+     * (int) casts are observable; override per case.
+     */
+    private function deleteRow(array $over = []): array
+    {
+        return $over + [
+            'id_msg' => '101', 'id_member' => '9', 'poster_time' => '1234', 'approved' => '1',
+            'id_board' => '2', 'id_first_msg' => '100', 'id_member_started' => '9', 'num_replies' => '3',
+        ];
+    }
+
+    public function updateChangesSubjectWithoutReparsingTheStoredBody(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['modify_any'];
+        $GLOBALS['api_rows']        = [self::MESSAGE_ROW, ['subject' => 'Changed'] + self::MESSAGE_ROW];
+
+        $response = (new PostController(Environment::request('PATCH', ['subject' => 'Changed'])))->update(['id' => '100']);
+
+        Assert::same($GLOBALS['api_modify_post'][0][0]['subject'], 'Changed');
+        Assert::same($GLOBALS['api_modify_post'][0][0]['body'], self::MESSAGE_ROW['body']);
+        Assert::same($GLOBALS['api_preparsecode'], []);
+        Assert::same(Environment::readResponse($response)['payload']['data']['subject'], 'Changed');
+    }
+
+    public function updateRejectsEmptyTextAndUnprivilegedApproval(): void
+    {
+        foreach ([['body' => ''], ['subject' => ''], ['approved' => false]] as $body) {
+            Environment::reset();
+
+            $GLOBALS['api_permissions'] = ['modify_any'];
+            $GLOBALS['api_rows']        = [self::MESSAGE_ROW];
+
+            $exception = $this->error(fn () => (new PostController(Environment::request('PATCH', $body)))->update(['id' => '100']));
+
+            Assert::same($exception->getStatusCode(), isset($body['approved']) ? 403 : 400);
+            Assert::same($GLOBALS['api_approve_posts'], []);
+        }
+    }
+
+    public function storeReportsACreationFailure(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions']        = ['post_reply_any'];
+        $GLOBALS['api_rows']               = [['id_board' => '2', 'locked' => '0', 'id_member_started' => '9', 'subject' => 'Topic']];
+        $GLOBALS['api_create_post_result'] = false;
+
+        $exception = $this->error(fn () => (new PostController(Environment::request('POST', ['topic' => 7, 'body' => 'Reply'])))->store([]));
+
+        Assert::same($exception->getStatusCode(), 400);
+        Assert::same($exception->getMessage(), 'The reply could not be created');
     }
 
     private function error(callable $callback): ApiException

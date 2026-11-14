@@ -21,10 +21,32 @@ if (! defined('SMF'))
 	die('No direct access...');
 
 /**
- * Read access to individual posts (messages).
+ * Read and manage individual posts (messages).
  */
 class PostController extends AbstractController
 {
+	/**
+	 * Fields a client may write, mapped onto their {db_prefix}messages column.
+	 * Content goes through SMF's modifyPost(); approval uses approvePosts() and
+	 * the poster identity columns are written directly (they have no helper).
+	 */
+	private const WRITABLE = [
+		'body'            => ['type' => 'raw', 'column' => 'body'],
+		'subject'         => ['type' => 'string', 'column' => 'subject', 'length' => 255, 'optional' => true],
+		'icon'            => ['type' => 'string', 'column' => 'icon', 'length' => 16, 'optional' => true],
+		'smileys_enabled' => ['type' => 'bool', 'column' => 'smileys_enabled', 'optional' => true],
+		'approved'        => ['type' => 'bool', 'column' => 'approved', 'optional' => true],
+		'poster_name'     => ['type' => 'string', 'column' => 'poster_name', 'length' => 255, 'optional' => true],
+		'poster_email'    => ['type' => 'email', 'column' => 'poster_email', 'optional' => true],
+		'poster_time'     => ['type' => 'int', 'column' => 'poster_time', 'optional' => true],
+		'modified_reason' => ['type' => 'string', 'column' => 'modified_reason', 'length' => 255, 'optional' => true],
+	];
+
+	/** SMF column names accepted in place of the API field names. */
+	private const ALIASES = [
+		'reason' => 'modified_reason',
+	];
+
 	/**
 	 * List the posts (messages) of a topic. Nested route:
 	 * GET /topics/{topic_id}/posts.
@@ -62,8 +84,7 @@ class PostController extends AbstractController
 			->from('{db_prefix}messages AS m
 				INNER JOIN {db_prefix}boards AS b ON (b.id_board = m.id_board)')
 			->where($where)
-			->columns('m.id_msg, m.id_topic, m.id_board, m.id_member, m.poster_name, m.poster_time,
-				m.subject, m.body, m.approved, m.modified_time, m.modified_name')
+			->columns($this->messageColumns())
 			->orderBy('m.id_msg')
 			->params($queryParams);
 
@@ -74,15 +95,7 @@ class PostController extends AbstractController
 	{
 		global $user_info;
 
-		$row = $this->first(
-			(new Query())
-				->from('{db_prefix}messages AS m
-					INNER JOIN {db_prefix}boards AS b ON (b.id_board = m.id_board)')
-				->where('{query_see_board} AND m.id_msg = {int:id}')
-				->columns('m.id_msg, m.id_topic, m.id_board, m.id_member, m.poster_name, m.poster_time,
-					m.subject, m.body, m.approved, m.modified_time, m.modified_name')
-				->params(['id' => $this->id($params)])
-		);
+		$row = $this->first($this->messageQuery()->params(['id' => $this->id($params)]));
 
 		if ($row === null || (empty($user_info['is_admin']) && (int) $row['approved'] !== 1)) {
 			throw ApiException::notFound('Post not found');
@@ -92,40 +105,15 @@ class PostController extends AbstractController
 	}
 
 	/**
-	 * Shape a message row for output (parsed and raw body).
-	 *
-	 * @param array<string, mixed> $row
-	 * @return array<string, mixed>
-	 */
-	protected function transform(array $row): array
-	{
-		return [
-			'id'      => (int) $row['id_msg'],
-			'topic'   => (int) $row['id_topic'],
-			'board'   => (int) $row['id_board'],
-			'subject' => $row['subject'],
-			'author'  => [
-				'id'   => (int) $row['id_member'],
-				'name' => $row['poster_name'],
-			],
-			'poster_time'   => (int) $row['poster_time'],
-			'modified_time' => (int) $row['modified_time'],
-			'modified_name' => $row['modified_name'],
-			'approved'      => (bool) $row['approved'],
-			'body'          => parse_bbc($row['body'], true, 'api-' . $row['id_msg']),
-			'body_raw'      => $row['body'],
-		];
-	}
-
-	/**
 	 * Post a reply to an existing topic on behalf of the API member.
 	 */
 	public function store(array $params): Response
 	{
 		global $sourcedir, $user_info, $modSettings;
 
+		$columns = $this->writableColumns(self::WRITABLE, false, self::ALIASES);
 		$topicId = (int) $this->request->input('topic', 0);
-		$body    = trim((string) $this->request->input('body', ''));
+		$body    = $columns['body'] ?? '';
 
 		if ($topicId <= 0 || $body === '') {
 			throw ApiException::badRequest('Fields "topic" and "body" are required');
@@ -179,7 +167,7 @@ class PostController extends AbstractController
 			$becomesApproved = false;
 		}
 
-		$subject = $topic['subject'];
+		$subject = $columns['subject'] ?? $topic['subject'];
 		if (stripos($subject, 'Re:') !== 0) {
 			$subject = 'Re: ' . $subject;
 		}
@@ -188,17 +176,19 @@ class PostController extends AbstractController
 			'id'              => 0,
 			'subject'         => $subject,
 			'body'            => $preparedBody,
-			'icon'            => 'xx',
-			'smileys_enabled' => true,
+			'icon'            => $columns['icon'] ?? 'xx',
+			'smileys_enabled' => $columns['smileys_enabled'] ?? true,
 			'attachments'     => [],
 			'approved'        => $becomesApproved,
 		];
+
 		$topicOptions = [
 			'id'           => $topicId,
 			'board'        => $board,
 			'mark_as_read' => true,
 			'is_approved'  => $becomesApproved,
 		];
+
 		$posterOptions = [
 			'id'                => (int) $user_info['id'],
 			'name'              => $user_info['name'],
@@ -211,19 +201,16 @@ class PostController extends AbstractController
 			throw ApiException::badRequest('The reply could not be created');
 		}
 
+		$row = $this->first($this->messageQuery()->params(['id' => (int) $msgOptions['id']]));
+
 		return $this->response()
 			->status(201)
-			->data([
-				'id'       => (int) $msgOptions['id'],
-				'topic'    => $topicId,
-				'board'    => $board,
-				'approved' => $becomesApproved,
-			]);
+			->data($this->transform($row));
 	}
 
 	/**
-	 * Fully replace a post (PUT): "body" is required. An optional "subject"
-	 * edits the message subject too.
+	 * Fully replace a post (PUT): "body" is required, every other writable
+	 * field is optional.
 	 */
 	public function replace(array $params): Response
 	{
@@ -231,8 +218,7 @@ class PostController extends AbstractController
 	}
 
 	/**
-	 * Update a post (PATCH). A post's editable content is its body, so "body"
-	 * is required here as well; "subject" stays optional.
+	 * Partially update a post (PATCH): any writable field, including the body.
 	 */
 	public function update(array $params): Response
 	{
@@ -261,13 +247,13 @@ class PostController extends AbstractController
 		);
 
 		if (
-            $row === null
-            || (
-                empty($user_info['is_admin'])
-                && (int) $row['approved'] !== 1
-                && (int) $row['id_member'] !== (int) $user_info['id']
-            )
-        ) {
+			$row === null
+			|| (
+				empty($user_info['is_admin'])
+				&& (int) $row['approved'] !== 1
+				&& (int) $row['id_member'] !== (int) $user_info['id']
+			)
+		) {
 			throw ApiException::notFound('Post not found');
 		}
 
@@ -277,8 +263,8 @@ class PostController extends AbstractController
 		// post of a topic that still has replies. Reject that as JSON instead.
 		if ((int) $row['id_first_msg'] === (int) $row['id_msg'] && (int) $row['num_replies'] > 0) {
 			throw ApiException::badRequest(
-                'Cannot delete the first post while the topic has replies; delete the topic instead'
-            );
+				'Cannot delete the first post while the topic has replies; delete the topic instead'
+			);
 		}
 
 		require_once($sourcedir . '/RemoveTopic.php');
@@ -290,6 +276,36 @@ class PostController extends AbstractController
 		removeMessage($id);
 
 		return $this->noContent();
+	}
+
+	/**
+	 * Shape a message row for output (parsed and raw body).
+	 *
+	 * @param array<string, mixed> $row
+	 * @return array<string, mixed>
+	 */
+	protected function transform(array $row): array
+	{
+		return [
+			'id'      => (int) $row['id_msg'],
+			'topic'   => (int) $row['id_topic'],
+			'board'   => (int) $row['id_board'],
+			'subject' => $row['subject'],
+			'author'  => [
+				'id'    => (int) $row['id_member'],
+				'name'  => $row['poster_name'],
+				'email' => $row['poster_email'],
+			],
+			'poster_time'     => (int) $row['poster_time'],
+			'modified_time'   => (int) $row['modified_time'],
+			'modified_name'   => $row['modified_name'],
+			'modified_reason' => $row['modified_reason'],
+			'icon'            => $row['icon'],
+			'smileys_enabled' => (bool) $row['smileys_enabled'],
+			'approved'        => (bool) $row['approved'],
+			'body'            => parse_bbc($row['body'], true, 'api-' . $row['id_msg']),
+			'body_raw'        => $row['body'],
+		];
 	}
 
 	/**
@@ -308,18 +324,19 @@ class PostController extends AbstractController
 					INNER JOIN {db_prefix}topics AS t ON (t.id_topic = m.id_topic)
 					INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)')
 				->where('{query_see_board} AND m.id_msg = {int:id}')
-				->columns('m.id_msg, m.id_topic, m.id_board, m.id_member, m.poster_time, m.approved')
+				->columns('m.id_msg, m.id_topic, m.id_board, m.id_member, m.poster_time, m.approved,
+					m.subject, m.body, m.icon, m.smileys_enabled, m.poster_name, m.poster_email')
 				->params(['id' => $id])
 		);
 
 		if (
-            $row === null
-            || (
-                empty($user_info['is_admin'])
-                && (int) $row['approved'] !== 1
-                && (int) $row['id_member'] !== (int) $user_info['id']
-            )
-        ) {
+			$row === null
+			|| (
+				empty($user_info['is_admin'])
+				&& (int) $row['approved'] !== 1
+				&& (int) $row['id_member'] !== (int) $user_info['id']
+			)
+		) {
 			throw ApiException::notFound('Post not found');
 		}
 
@@ -334,83 +351,143 @@ class PostController extends AbstractController
 			}
 
 			if (
-                ! empty($modSettings['edit_disable_time'])
-                && (int) $row['poster_time'] + $modSettings['edit_disable_time'] * 60 < time()
-            ) {
+				! empty($modSettings['edit_disable_time'])
+				&& (int) $row['poster_time'] + $modSettings['edit_disable_time'] * 60 < time()
+			) {
 				throw ApiException::forbidden('The time limit for editing this post has passed');
 			}
 		}
 
-		$fields = $this->writable(['body'], $full);
-		$body   = trim((string) $fields['body']);
+		$columns = $this->writableColumns(self::WRITABLE, $full, self::ALIASES);
 
-		if ($body === '') {
-			throw ApiException::badRequest('Field "body" cannot be empty');
-		}
-
-		require_once($sourcedir . '/Subs-Post.php');
-
-		// SMF stores messages pre-parsed; run the same pipeline the editor uses.
-		$preparedBody = $body;
-
-		preparsecode($preparedBody);
-
+		// modifyPost() always needs the body, so the stored one is passed through
+		// when only the metadata changes.
 		$msgOptions = [
-			'id'            => $id,
-			'body'          => $preparedBody,
-			'modify_time'   => time(),
-			'modify_name'   => $user_info['name'],
-			'modify_reason' => $this->cleanString($this->request->input('reason', '')),
+			'id'   => $id,
+			'body' => $row['body'],
 		];
 
-		$subject = $this->request->input('subject');
-		if ($subject !== null) {
-			$subject = $this->cleanString($subject);
+		if (array_key_exists('body', $columns)) {
+			if ($columns['body'] === '') {
+				throw ApiException::badRequest('Field "body" cannot be empty');
+			}
 
-			if ($subject === '') {
+			require_once($sourcedir . '/Subs-Post.php');
+
+			// SMF stores messages pre-parsed; run the same pipeline the editor uses.
+			$preparedBody = $columns['body'];
+
+			preparsecode($preparedBody);
+
+			$msgOptions['body'] = $preparedBody;
+		}
+
+		if (array_key_exists('subject', $columns)) {
+			if ($columns['subject'] === '') {
 				throw ApiException::badRequest('Field "subject" cannot be empty');
 			}
 
-			$msgOptions['subject'] = $subject;
+			$msgOptions['subject'] = $columns['subject'];
 		}
+
+		if (array_key_exists('icon', $columns)) {
+			$msgOptions['icon'] = $columns['icon'];
+		}
+
+		if (array_key_exists('smileys_enabled', $columns)) {
+			$msgOptions['smileys_enabled'] = $columns['smileys_enabled'];
+		}
+
+		// Every edit is stamped with who made it and why.
+		$msgOptions['modify_time']   = time();
+		$msgOptions['modify_name']   = $user_info['name'];
+		$msgOptions['modify_reason'] = $columns['modified_reason'] ?? '';
 
 		$topicOptions = [
 			'id'    => (int) $row['id_topic'],
 			'board' => $board,
+			// modifyPost() reads the poll option unconditionally.
+			'poll'  => null,
 		];
 		// Keep the original author for post-count and mention attribution.
 		$posterOptions = [
 			'id' => (int) $row['id_member'],
 		];
 
+		require_once($sourcedir . '/Subs-Post.php');
+
 		modifyPost($msgOptions, $topicOptions, $posterOptions);
 
-		$updated = $this->first(
-			(new Query())
-				->from('{db_prefix}messages AS m
-					INNER JOIN {db_prefix}boards AS b ON (b.id_board = m.id_board)')
-				->where('{query_see_board} AND m.id_msg = {int:id}')
-				->columns('m.id_msg, m.id_topic, m.id_board, m.id_member, m.poster_name, m.poster_time,
-					m.subject, m.body, m.approved, m.modified_time, m.modified_name')
-				->params(['id' => $id])
-		);
+		$this->applyDirectColumns($id, $board, $columns, $row);
 
-		return $this->response()->data([
-			'id'      => (int) $updated['id_msg'],
-			'topic'   => (int) $updated['id_topic'],
-			'board'   => (int) $updated['id_board'],
-			'subject' => $updated['subject'],
-			'author'  => [
-				'id'   => (int) $updated['id_member'],
-				'name' => $updated['poster_name'],
-			],
-			'poster_time'   => (int) $updated['poster_time'],
-			'modified_time' => (int) $updated['modified_time'],
-			'modified_name' => $updated['modified_name'],
-			'approved'      => (bool) $updated['approved'],
-			'body'          => parse_bbc($updated['body'], true, 'api-' . $updated['id_msg']),
-			'body_raw'      => $updated['body'],
-		]);
+		$updated = $this->first($this->messageQuery()->params(['id' => $id]));
+
+		return $this->response()->data($this->transform($updated));
+	}
+
+	/**
+	 * Fields SMF has no helper for: approval, the poster identity columns and
+	 * the modification reason when only those change.
+	 *
+	 * @param array<string, mixed> $columns
+	 * @param array<string, mixed> $row
+	 */
+	private function applyDirectColumns(int $id, int $board, array $columns, array $row): void
+	{
+		global $sourcedir, $smcFunc;
+
+		if (array_key_exists('approved', $columns) && $columns['approved'] !== (bool) $row['approved']) {
+			if (! allowedTo('approve_posts', $board)) {
+				throw ApiException::forbidden('You cannot approve or unapprove this post');
+			}
+
+			require_once($sourcedir . '/Subs-Post.php');
+
+			approvePosts([$id], $columns['approved']);
+		}
+
+		$identity = array_intersect_key($columns, array_flip(['poster_name', 'poster_email', 'poster_time']));
+
+		if ($identity === []) {
+			return;
+		}
+
+		if (! allowedTo('moderate_forum')) {
+			throw ApiException::forbidden('You cannot change the author of this post');
+		}
+
+		$sets   = [];
+		$params = ['id' => $id];
+
+		foreach ($identity as $column => $value) {
+			$type = $column === 'poster_time' ? 'int' : 'string';
+
+			$sets[]          = $column . ' = {' . $type . ':' . $column . '}';
+			$params[$column] = $value;
+		}
+
+		$smcFunc['db_query']('', '
+			UPDATE {db_prefix}messages
+			SET ' . implode(', ', $sets) . '
+			WHERE id_msg = {int:id}', $params);
+	}
+
+	/**
+	 * The message columns every answer is built from.
+	 */
+	private function messageColumns(): string
+	{
+		return 'm.id_msg, m.id_topic, m.id_board, m.id_member, m.poster_name, m.poster_email, m.poster_time,
+			m.subject, m.body, m.icon, m.smileys_enabled, m.approved, m.modified_time, m.modified_name, m.modified_reason';
+	}
+
+	private function messageQuery(): Query
+	{
+		return (new Query())
+			->from('{db_prefix}messages AS m
+				INNER JOIN {db_prefix}boards AS b ON (b.id_board = m.id_board)')
+			->where('{query_see_board} AND m.id_msg = {int:id}')
+			->columns($this->messageColumns());
 	}
 
 	/**
@@ -427,16 +504,15 @@ class PostController extends AbstractController
 		$board     = (int) $row['id_board'];
 		$isAuthor  = (int) $row['id_member'] === (int) $user_info['id'];
 		$isStarter = (int) $row['id_member_started'] === (int) $user_info['id'];
-
 		$deleteAny = allowedTo('delete_any', $board);
 
 		if (! $deleteAny) {
 			if ($isAuthor) {
 				$canOwn = allowedTo('delete_own', $board)
 					&& (
-                        empty($modSettings['edit_disable_time'])
-                        || (int) $row['poster_time'] + $modSettings['edit_disable_time'] * 60 >= time()
-                    );
+						empty($modSettings['edit_disable_time'])
+						|| (int) $row['poster_time'] + $modSettings['edit_disable_time'] * 60 >= time()
+					);
 
 				if (! $canOwn && ! ($isStarter && allowedTo('delete_replies', $board))) {
 					throw ApiException::forbidden('You cannot delete this post');
@@ -450,21 +526,21 @@ class PostController extends AbstractController
 		// topic-removal permission on top of the message one.
 		if ((int) $row['id_first_msg'] === (int) $row['id_msg']) {
 			if (
-                ! allowedTo('remove_any', $board)
-                && ! ($isAuthor && allowedTo('remove_own', $board))
-            ) {
+				! allowedTo('remove_any', $board)
+				&& ! ($isAuthor && allowedTo('remove_own', $board))
+			) {
 				throw ApiException::forbidden('You cannot delete the first post of this topic');
 			}
 		}
 
 		// A pending post you cannot approve stays invisible, so it stays undeletable.
 		if (
-            ! empty($modSettings['postmod_active'])
-            && (int) $row['approved'] !== 1
-            && ! $isAuthor
-            && ! $deleteAny
-            && ! allowedTo('approve_posts', $board)
-        ) {
+			! empty($modSettings['postmod_active'])
+			&& (int) $row['approved'] !== 1
+			&& ! $isAuthor
+			&& ! $deleteAny
+			&& ! allowedTo('approve_posts', $board)
+		) {
 			throw ApiException::forbidden('You cannot delete this post');
 		}
 	}

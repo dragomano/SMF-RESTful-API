@@ -133,6 +133,7 @@ final class RequestTest
     public function pathQueryTakesPrecedenceOverPathInfo(): void
     {
         Environment::reset();
+
         $_SERVER['PATH_INFO'] = '/api/v1/other';
 
         $request = Environment::request('GET', [], ['path' => 'v1/members']);
@@ -143,7 +144,8 @@ final class RequestTest
     public function detectsAjsonContentTypeCaseInsensitively(): void
     {
         Environment::reset();
-        $_SERVER['REQUEST_METHOD'] = 'POST';
+
+        $_SERVER['REQUEST_METHOD']    = 'POST';
         $_SERVER['HTTP_CONTENT_TYPE'] = 'APPLICATION/JSON';
 
         $caught = null;
@@ -161,9 +163,10 @@ final class RequestTest
     public function keepsEveryHeaderAndPrefersTheHttpPrefix(): void
     {
         Environment::reset();
-        $_SERVER['HTTP_AUTHORIZATION'] = 'real-token';
+
+        $_SERVER['HTTP_AUTHORIZATION']          = 'real-token';
         $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] = 'redirect-token';
-        $_SERVER['HTTP_X_CUSTOM'] = 'custom-value';
+        $_SERVER['HTTP_X_CUSTOM']               = 'custom-value';
 
         $request = new Request();
 
@@ -176,6 +179,7 @@ final class RequestTest
     public function readsHeadersExposedThroughTheRedirectPrefix(): void
     {
         Environment::reset();
+
         $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] = 'Bearer token';
 
         Assert::same((new Request())->header('authorization'), 'Bearer token');
@@ -184,7 +188,8 @@ final class RequestTest
     public function rejectsAMalformedJsonBody(): void
     {
         Environment::reset();
-        $_SERVER['REQUEST_METHOD'] = 'POST';
+
+        $_SERVER['REQUEST_METHOD']    = 'POST';
         $_SERVER['HTTP_CONTENT_TYPE'] = 'application/json';
 
         $caught = null;

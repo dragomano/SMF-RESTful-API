@@ -21,10 +21,32 @@ if (! defined('SMF'))
 	die('No direct access...');
 
 /**
- * Read and create topics.
+ * Read and manage topics.
  */
 class TopicController extends AbstractController
 {
+	/**
+	 * Fields a client may write. The topic flags live in {db_prefix}topics,
+	 * while the subject and body belong to the opening message; SMF applies the
+	 * former through modifyPost()'s topic options and the latter through its
+	 * message options, so both end up in save().
+	 */
+	private const WRITABLE = [
+		'subject'   => ['type' => 'string', 'column' => 'subject', 'length' => 255],
+		'body'      => ['type' => 'raw', 'column' => 'body', 'optional' => true],
+		'locked'    => ['type' => 'bool', 'column' => 'locked', 'optional' => true],
+		'is_sticky' => ['type' => 'bool', 'column' => 'is_sticky', 'optional' => true],
+		'approved'  => ['type' => 'bool', 'column' => 'approved', 'optional' => true],
+		'num_views' => ['type' => 'int', 'column' => 'num_views', 'optional' => true],
+		'board'     => ['type' => 'int', 'column' => 'id_board', 'min' => 1, 'optional' => true],
+	];
+
+	/** SMF column names accepted in place of the API field names. */
+	private const ALIASES = [
+		'sticky'   => 'is_sticky',
+		'id_board' => 'board',
+	];
+
 	public function index(array $params): Response
 	{
 		global $user_info;
@@ -78,17 +100,7 @@ class TopicController extends AbstractController
 	{
 		global $user_info;
 
-		$row = $this->first(
-			(new Query())
-				->from('{db_prefix}topics AS t
-					INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)
-					INNER JOIN {db_prefix}messages AS ms ON (ms.id_msg = t.id_first_msg)')
-				->where('{query_see_board} AND t.id_topic = {int:id}')
-				->columns('t.id_topic, t.id_board, t.id_first_msg, t.id_last_msg, t.num_replies, t.num_views,
-					t.locked, t.is_sticky, t.approved, ms.subject, ms.body, ms.poster_time,
-					ms.id_member AS starter_id, ms.poster_name AS starter_name')
-				->params(['id' => $this->id($params)])
-		);
+		$row = $this->first($this->topicQuery(true)->params(['id' => $this->id($params)]));
 
 		if ($row === null || (empty($user_info['is_admin']) && (int) $row['approved'] !== 1)) {
 			throw ApiException::notFound('Topic not found');
@@ -109,9 +121,10 @@ class TopicController extends AbstractController
 	{
 		global $sourcedir, $user_info, $modSettings;
 
-		$board   = (int) $this->request->input('board', 0);
-		$subject = $this->cleanString($this->request->input('subject', ''));
-		$body    = trim((string) $this->request->input('body', ''));
+		$columns = $this->writableColumns(self::WRITABLE, false, self::ALIASES);
+		$board   = (int) ($columns['id_board'] ?? 0);
+		$subject = $columns['subject'] ?? '';
+		$body    = $columns['body'] ?? '';
 
 		if ($board <= 0 || $subject === '' || $body === '') {
 			throw ApiException::badRequest('Fields "board", "subject" and "body" are required');
@@ -145,10 +158,10 @@ class TopicController extends AbstractController
 		// "unapproved" permission have their topic queued for approval.
 		$becomesApproved = true;
 		if (
-            ! empty($modSettings['postmod_active'])
-            && ! allowedTo('post_new', $board)
-            && allowedTo('post_unapproved_topics', $board)
-        ) {
+			! empty($modSettings['postmod_active'])
+			&& ! allowedTo('post_new', $board)
+			&& allowedTo('post_unapproved_topics', $board)
+		) {
 			$becomesApproved = false;
 		}
 
@@ -161,12 +174,14 @@ class TopicController extends AbstractController
 			'attachments'     => [],
 			'approved'        => $becomesApproved,
 		];
+
 		$topicOptions = [
 			'id'           => 0,
 			'board'        => $board,
 			'mark_as_read' => true,
 			'is_approved'  => $becomesApproved,
 		];
+
 		$posterOptions = [
 			'id'                => (int) $user_info['id'],
 			'name'              => $user_info['name'],
@@ -179,19 +194,45 @@ class TopicController extends AbstractController
 			throw ApiException::badRequest('The topic could not be created');
 		}
 
+		// Sticky and locked have no create option: set them on the new topic.
+		$flags = [];
+
+		if (array_key_exists('is_sticky', $columns)) {
+			if (! allowedTo('make_sticky', $board)) {
+				throw ApiException::forbidden('You cannot pin this topic');
+			}
+
+			$flags['sticky_mode'] = $columns['is_sticky'] ? 1 : 0;
+		}
+
+		if (array_key_exists('locked', $columns)) {
+			if (! allowedTo('lock_any', $board) && ! allowedTo('lock_own', $board)) {
+				throw ApiException::forbidden('You cannot lock this topic');
+			}
+
+			$flags['lock_mode'] = $columns['locked'] ? 1 : 0;
+		}
+
+		if ($flags !== []) {
+			// modifyPost() takes every argument by reference, so the arrays have
+			// to live in variables; "poll" is read unconditionally (null = keep).
+			$flagMsgOptions    = ['id' => (int) $msgOptions['id'], 'body' => $preparedBody];
+			$flagTopicOptions  = ['id' => (int) $topicOptions['id'], 'poll' => null] + $flags;
+			$flagPosterOptions = ['id' => (int) $user_info['id']];
+
+			modifyPost($flagMsgOptions, $flagTopicOptions, $flagPosterOptions);
+		}
+
+		$row = $this->first($this->topicQuery()->params(['id' => (int) $topicOptions['id']]));
+
 		return $this->response()
 			->status(201)
-			->data([
-				'id'           => $topicOptions['id'],
-				'board'        => $board,
-				'subject'      => $subject,
-				'id_first_msg' => (int) $msgOptions['id'],
-			]);
+			->data($this->transform($row));
 	}
 
 	/**
-	 * Fully replace a topic's editable fields (PUT): "subject", "locked" and
-	 * "sticky" are all required.
+	 * Fully replace a topic's editable fields (PUT): "subject" is required,
+	 * everything else is optional.
 	 */
 	public function replace(array $params): Response
 	{
@@ -199,7 +240,7 @@ class TopicController extends AbstractController
 	}
 
 	/**
-	 * Partially update a topic (PATCH): any of "subject", "locked", "sticky".
+	 * Partially update a topic (PATCH): any writable field.
 	 */
 	public function update(array $params): Response
 	{
@@ -244,105 +285,6 @@ class TopicController extends AbstractController
 		return $this->noContent();
 	}
 
-	/**
-	 * Shared PUT/PATCH body. Topic properties live on the opening post, so the
-	 * changes are applied through SMF's modifyPost(): the subject edits the
-	 * first message, while locked/sticky toggle the topic flags.
-	 */
-	private function save(array $params, bool $full): Response
-	{
-		global $sourcedir, $user_info;
-
-		$id = $this->id($params);
-
-		$topic = $this->first(
-			(new Query())
-				->from('{db_prefix}topics AS t
-					INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)
-					INNER JOIN {db_prefix}messages AS ms ON (ms.id_msg = t.id_first_msg)')
-				->where('{query_see_board} AND t.id_topic = {int:id}')
-				->columns('t.id_topic, t.id_board, t.id_first_msg, t.id_member_started,
-					ms.id_member AS author_id, ms.subject, ms.body')
-				->params(['id' => $id])
-		);
-
-		if ($topic === null) {
-			throw ApiException::notFound('Topic not found');
-		}
-
-		$board     = (int) $topic['id_board'];
-		$isStarter = (int) $topic['id_member_started'] === (int) $user_info['id'];
-		$isAuthor  = (int) $topic['author_id'] === (int) $user_info['id'];
-		$fields    = $this->writable(['subject', 'locked', 'sticky'], $full);
-
-		// modifyPost() reads the body unconditionally (mentions/quotes), so the
-		// current text is passed through unchanged; only the subject is editable
-		// here.
-		$msgOptions = [
-			'id'   => (int) $topic['id_first_msg'],
-			'body' => $topic['body'],
-		];
-		$topicOptions = [
-			'id'    => $id,
-			'board' => $board,
-		];
-		$posterOptions = [
-			'id' => (int) $topic['author_id'],
-		];
-
-		if (array_key_exists('subject', $fields)) {
-			// Editing the subject edits the opening post.
-			if (! allowedTo('modify_any', $board) && ! ($isAuthor && allowedTo('modify_own', $board))) {
-				throw ApiException::forbidden('You cannot edit this topic\'s subject');
-			}
-
-			$subject = $this->cleanString($fields['subject']);
-
-			if ($subject === '') {
-				throw ApiException::badRequest('Field "subject" cannot be empty');
-			}
-
-			$msgOptions['subject']       = $subject;
-			$msgOptions['modify_time']   = time();
-			$msgOptions['modify_name']   = $user_info['name'];
-			$msgOptions['modify_reason'] = '';
-		}
-
-		if (array_key_exists('locked', $fields)) {
-			if (! allowedTo('lock_any', $board) && ! ($isStarter && allowedTo('lock_own', $board))) {
-				throw ApiException::forbidden('You cannot lock this topic');
-			}
-
-			$topicOptions['lock_mode'] = $this->boolean($fields['locked']) ? 1 : 0;
-		}
-
-		if (array_key_exists('sticky', $fields)) {
-			if (! allowedTo('make_sticky', $board)) {
-				throw ApiException::forbidden('You cannot pin this topic');
-			}
-
-			$topicOptions['sticky_mode'] = $this->boolean($fields['sticky']) ? 1 : 0;
-		}
-
-		require_once($sourcedir . '/Subs-Post.php');
-
-		modifyPost($msgOptions, $topicOptions, $posterOptions);
-
-		$row = $this->first(
-			(new Query())
-				->from('{db_prefix}topics AS t
-					INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)
-					INNER JOIN {db_prefix}messages AS ms ON (ms.id_msg = t.id_first_msg)')
-				->where('{query_see_board} AND t.id_topic = {int:id}')
-				->columns('t.id_topic, t.id_board, t.id_first_msg, t.id_last_msg, t.num_replies, t.num_views,
-					t.locked, t.is_sticky, t.approved, ms.subject, ms.poster_time, ms.id_member AS starter_id,
-					ms.poster_name AS starter_name')
-				->params(['id' => $id])
-		);
-
-		return $this->response()->data($this->transform($row));
-	}
-
 	protected function transform(array $row): array
 	{
 		return [
@@ -362,5 +304,185 @@ class TopicController extends AbstractController
 			'id_first_msg' => (int) $row['id_first_msg'],
 			'id_last_msg'  => (int) $row['id_last_msg'],
 		];
+	}
+
+	/**
+	 * Shared PUT/PATCH body. Topic properties live on the opening post, so the
+	 * changes are applied through SMF's modifyPost(); approval, views and the
+	 * board move each use the helper SMF itself uses.
+	 */
+	private function save(array $params, bool $full): Response
+	{
+		global $sourcedir, $smcFunc, $user_info;
+
+		$id = $this->id($params);
+
+		$topic = $this->first(
+			(new Query())
+				->from('{db_prefix}topics AS t
+					INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)
+					INNER JOIN {db_prefix}messages AS ms ON (ms.id_msg = t.id_first_msg)')
+				->where('{query_see_board} AND t.id_topic = {int:id}')
+				->columns('t.id_topic, t.id_board, t.id_first_msg, t.id_member_started, t.locked, t.is_sticky,
+					t.approved, t.num_views, ms.id_member AS author_id, ms.subject, ms.body')
+				->params(['id' => $id])
+		);
+
+		if ($topic === null) {
+			throw ApiException::notFound('Topic not found');
+		}
+
+		$board     = (int) $topic['id_board'];
+		$isStarter = (int) $topic['id_member_started'] === (int) $user_info['id'];
+		$isAuthor  = (int) $topic['author_id']         === (int) $user_info['id'];
+		$columns   = $this->writableColumns(self::WRITABLE, $full, self::ALIASES);
+
+		// modifyPost() reads the body unconditionally (mentions/quotes), so the
+		// current text is passed through untouched when only flags change.
+		$msgOptions     = ['id' => (int) $topic['id_first_msg'], 'body' => $topic['body']];
+		$topicOptions   = ['id' => $id, 'board' => $board, 'poll' => null];
+		$posterOptions  = ['id' => (int) $topic['author_id']];
+		$touchesMessage = false;
+
+		if (array_key_exists('subject', $columns) || array_key_exists('body', $columns)) {
+			if (! allowedTo('modify_any', $board) && ! ($isAuthor && allowedTo('modify_own', $board))) {
+				throw ApiException::forbidden('You cannot edit this topic');
+			}
+		}
+
+		if (array_key_exists('subject', $columns)) {
+			if ($columns['subject'] === '') {
+				throw ApiException::badRequest('Field "subject" cannot be empty');
+			}
+
+			$msgOptions['subject'] = $columns['subject'];
+			$touchesMessage        = true;
+		}
+
+		if (array_key_exists('body', $columns)) {
+			if ($columns['body'] === '') {
+				throw ApiException::badRequest('Field "body" cannot be empty');
+			}
+
+			require_once($sourcedir . '/Subs-Post.php');
+
+			// SMF stores messages pre-parsed; run the same pipeline the editor uses.
+			$preparedBody = $columns['body'];
+
+			preparsecode($preparedBody);
+
+			$msgOptions['body'] = $preparedBody;
+			$touchesMessage     = true;
+		}
+
+		if ($touchesMessage) {
+			$msgOptions['modify_time']   = time();
+			$msgOptions['modify_name']   = $user_info['name'];
+			$msgOptions['modify_reason'] = $this->cleanString($this->request->input('reason', ''));
+		}
+
+		if (array_key_exists('locked', $columns)) {
+			if (! allowedTo('lock_any', $board) && ! ($isStarter && allowedTo('lock_own', $board))) {
+				throw ApiException::forbidden('You cannot lock this topic');
+			}
+
+			$topicOptions['lock_mode'] = $columns['locked'] ? 1 : 0;
+		}
+
+		if (array_key_exists('is_sticky', $columns)) {
+			if (! allowedTo('make_sticky', $board)) {
+				throw ApiException::forbidden('You cannot pin this topic');
+			}
+
+			$topicOptions['sticky_mode'] = $columns['is_sticky'] ? 1 : 0;
+		}
+
+		require_once($sourcedir . '/Subs-Post.php');
+
+		modifyPost($msgOptions, $topicOptions, $posterOptions);
+
+		if (array_key_exists('approved', $columns) && $columns['approved'] !== (bool) $topic['approved']) {
+			if (! allowedTo('approve_posts', $board)) {
+				throw ApiException::forbidden('You cannot approve or unapprove this topic');
+			}
+
+			approveTopics([$id], $columns['approved']);
+		}
+
+		if (array_key_exists('num_views', $columns) && $columns['num_views'] !== (int) $topic['num_views']) {
+			if (! allowedTo('moderate_board', $board)) {
+				throw ApiException::forbidden('You cannot change the view counter');
+			}
+
+			// SMF increments num_views from Display.php and exposes no helper
+			// for setting it, so the counter is written directly.
+			$smcFunc['db_query']('', '
+				UPDATE {db_prefix}topics
+				SET num_views = {int:views}
+				WHERE id_topic = {int:id}',
+				[
+					'views' => $columns['num_views'],
+					'id'    => $id,
+				]
+			);
+		}
+
+		if (array_key_exists('id_board', $columns) && $columns['id_board'] !== $board) {
+			$this->move($id, $board, $columns['id_board'], $isStarter);
+		}
+
+		$row = $this->first($this->topicQuery()->params(['id' => $id]));
+
+		return $this->response()->data($this->transform($row));
+	}
+
+	/**
+	 * Move the topic to another board through SMF's own helper, which keeps the
+	 * boards' counters, the search index and the recycle bin in sync.
+	 */
+	private function move(int $id, int $fromBoard, int $toBoard, bool $isStarter): void
+	{
+		global $sourcedir;
+
+		if (! allowedTo('move_any', $fromBoard) && ! ($isStarter && allowedTo('move_own', $fromBoard))) {
+			throw ApiException::forbidden('You cannot move this topic');
+		}
+
+		$visible = $this->exists(
+			(new Query())
+				->from('{db_prefix}boards AS b')
+				->where('{query_see_board} AND b.id_board = {int:board}')
+				->params(['board' => $toBoard])
+		);
+
+		if (! $visible) {
+			throw ApiException::notFound('Board not found');
+		}
+
+		require_once($sourcedir . '/MoveTopic.php');
+
+		moveTopics([$id], $toBoard);
+	}
+
+	/**
+	 * The columns a topic answer is built from. The detailed variant also
+	 * carries the opening message, for show().
+	 */
+	private function topicQuery(bool $withBody = false): Query
+	{
+		$columns = 't.id_topic, t.id_board, t.id_first_msg, t.id_last_msg, t.num_replies, t.num_views,
+			t.locked, t.is_sticky, t.approved, ms.subject, ms.poster_time, ms.id_member AS starter_id,
+			ms.poster_name AS starter_name';
+
+		if ($withBody) {
+			$columns .= ', ms.body';
+		}
+
+		return (new Query())
+			->from('{db_prefix}topics AS t
+				INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)
+				INNER JOIN {db_prefix}messages AS ms ON (ms.id_msg = t.id_first_msg)')
+			->where('{query_see_board} AND t.id_topic = {int:id}')
+			->columns($columns);
 	}
 }

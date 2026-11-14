@@ -35,9 +35,54 @@ final class ProbeController extends AbstractController
         return $this->paginate($query);
     }
 
-    public function callWritable(array $fields, bool $full): array
+    public function callWritableColumns(array $schema, bool $full, array $aliases = []): array
     {
-        return $this->writable($fields, $full);
+        return $this->writableColumns($schema, $full, $aliases);
+    }
+
+    public function callInteger(mixed $value, string $field = 'order', int $min = 0, int $max = 10): int
+    {
+        return $this->integer($value, $field, $min, $max);
+    }
+
+    public function callFirst(Query $query): ?array
+    {
+        return $this->first($query);
+    }
+
+    public function callExists(Query $query): bool
+    {
+        return $this->exists($query);
+    }
+
+    public function callFetchAll(Query $query): array
+    {
+        return $this->fetchAll($query);
+    }
+
+    public function callEmail(mixed $value): string
+    {
+        return $this->email($value, 'email');
+    }
+
+    public function callIntList(mixed $value): string
+    {
+        return $this->intList($value, 'ids');
+    }
+
+    public function callClampedInteger(mixed $value, int $min, int $max): int
+    {
+        return $this->integer($value, 'order', $min, $max, true);
+    }
+
+    public function callFloat(mixed $value, string $field = 'offset'): float
+    {
+        return $this->float($value, $field);
+    }
+
+    public function callDate(mixed $value, string $field = 'birthdate'): string
+    {
+        return $this->date($value, $field);
     }
 
     public function callBoolean(mixed $value): bool
@@ -82,6 +127,36 @@ final class AbstractControllerTest
         Assert::same($exception->getMessage(), 'Invalid "id" identifier');
     }
 
+    public function queryHelpersDelegateToTheQueryObject(): void
+    {
+        $probe = $this->probe();
+
+        $GLOBALS['api_rows']     = [['id' => 1], ['id' => 2]];
+        $GLOBALS['api_num_rows'] = 1;
+
+        Assert::same($probe->callFirst((new Query())->from('{db_prefix}boards')->where('1=1')), ['id' => 1]);
+        Assert::true($probe->callExists((new Query())->from('{db_prefix}boards')->where('1=1')));
+        Assert::same($probe->callFetchAll((new Query())->from('{db_prefix}boards')->where('1=1')), [['id' => 2]]);
+    }
+
+    public function emailRejectsAnInvalidAddress(): void
+    {
+        $exception = $this->badRequest(fn () => $this->probe()->callEmail('not-an-email'));
+
+        Assert::same($exception->getMessage(), 'Field "email" is not a valid email address');
+    }
+
+    public function intListSkipsBlankItems(): void
+    {
+        Assert::same($this->probe()->callIntList('3,,1,3'), '3,1');
+    }
+
+    public function integerClampsOutOfRangeValuesWhenRequested(): void
+    {
+        Assert::same($this->probe()->callClampedInteger('-9', -2, 10), -2);
+        Assert::same($this->probe()->callClampedInteger('99', -2, 10), 10);
+    }
+
     public function paginationDefaultsToTheFirstPage(): void
     {
         Assert::same($this->probe()->callPagination(), [25, 0]);
@@ -97,37 +172,144 @@ final class AbstractControllerTest
         Assert::same($this->probe($query)->callPagination(), [$limit, $offset]);
     }
 
-    public function writableDemandsEveryFieldForAfullReplace(): void
+    public function writableColumnsDemandsEveryRequiredFieldForAfullReplace(): void
     {
-        $probe = $this->probe([], ['name' => 'A']);
-
-        $exception = $this->badRequest(fn () => $probe->callWritable(['name', 'description'], true));
+        $probe     = $this->probe([], ['name' => 'A']);
+        $exception = $this->badRequest(fn () => $probe->callWritableColumns($this->categorySchema(), true));
 
         Assert::same($exception->getStatusCode(), 400);
         Assert::same($exception->getMessage(), 'Field "description" is required for a full update');
     }
 
-    public function writableReturnsAllFieldsWhenTheReplaceIsComplete(): void
+    public function writableColumnsMapsFieldsOntoTheirColumnNames(): void
     {
-        $probe = $this->probe([], ['name' => 'A', 'description' => 'B']);
+        $probe = $this->probe([], ['name' => ' A ', 'description' => 'B']);
 
-        Assert::same($probe->callWritable(['name', 'description'], true), ['name' => 'A', 'description' => 'B']);
+        Assert::same($probe->callWritableColumns($this->categorySchema(), true), [
+            'name'        => 'A',
+            'description' => 'B',
+        ]);
     }
 
-    public function writableKeepsOnlyTheSuppliedFieldsForApatch(): void
+    public function writableColumnsKeepsOnlyTheSuppliedFieldsForApatch(): void
     {
         $probe = $this->probe([], ['description' => 'B']);
 
-        Assert::same($probe->callWritable(['name', 'description'], false), ['description' => 'B']);
+        Assert::same($probe->callWritableColumns($this->categorySchema(), false), ['description' => 'B']);
     }
 
-    public function writableRejectsAnEmptyPatch(): void
+    public function writableColumnsAcceptsSmfColumnNamesAsAliases(): void
     {
-        $probe = $this->probe([], ['unrelated' => 'x']);
+        $probe = $this->probe([], ['cat_order' => 3]);
 
-        $exception = $this->badRequest(fn () => $probe->callWritable(['name'], false));
+        Assert::same(
+            $probe->callWritableColumns($this->categorySchema(), false, ['cat_order' => 'order']),
+            ['cat_order' => 3]
+        );
+    }
+
+    public function writableColumnsRejectsAnEmptyPatch(): void
+    {
+        $probe     = $this->probe([], ['unrelated' => 'x']);
+        $exception = $this->badRequest(fn () => $probe->callWritableColumns($this->categorySchema(), false));
 
         Assert::same($exception->getStatusCode(), 400);
+        Assert::same($exception->getMessage(), 'No writable fields provided');
+    }
+
+    public function writableColumnsCastsEverySupportedType(): void
+    {
+        $probe = $this->probe([], [
+            'flag'  => 'yes',
+            'count' => '7',
+            'email' => 'admin@example.org',
+            'date'  => '1999-12-31',
+            'tags'  => '3, 1,3',
+            'ratio' => '1.256',
+            'text'  => ' <b>x</b> ',
+        ]);
+
+        Assert::same($probe->callWritableColumns($this->typedSchema(), false), [
+            'flag'  => true,
+            'count' => 7,
+            'email' => 'admin@example.org',
+            'date'  => '1999-12-31',
+            'tags'  => '3,1',
+            'ratio' => 1.26,
+            'text'  => '&lt;b&gt;x&lt;/b&gt;',
+        ]);
+    }
+
+    public function writableColumnsRejectsValuesLongerThanTheColumn(): void
+    {
+        $probe = $this->probe([], ['text' => 'xxxxx']);
+
+        $exception = $this->badRequest(fn () => $probe->callWritableColumns([
+            'text' => ['type' => 'string', 'length' => 4],
+        ], false));
+
+        Assert::same($exception->getMessage(), 'Field "text" must not be longer than 4 characters');
+    }
+
+    public function emptyDateFallsBackToSmfsNotSetValue(): void
+    {
+        Assert::same($this->probe()->callDate(''), '1004-01-01');
+    }
+
+    public function dateRejectsAnImpossibleDay(): void
+    {
+        $exception = $this->badRequest(fn () => $this->probe()->callDate('2023-02-30'));
+
+        Assert::same($exception->getMessage(), 'Field "birthdate" must be a date in YYYY-MM-DD format');
+    }
+
+    #[DataSet([2, 2.0], 'integer')]
+    #[DataSet(['-1.5', -1.5], 'negative string')]
+    #[DataSet([0.0, 0.0], 'zero')]
+    public function floatAcceptsNumericValues(mixed $value, float $expected): void
+    {
+        Assert::same($this->probe()->callFloat($value), $expected);
+    }
+
+    public function floatRejectsANonNumericValue(): void
+    {
+        $exception = $this->badRequest(fn () => $this->probe()->callFloat('half past two'));
+
+        Assert::same($exception->getMessage(), 'Field "offset" must be a number');
+    }
+
+    public function integerAcceptsNegativesOnlyWhenTheLowerBoundIsNegative(): void
+    {
+        Assert::same($this->probe()->callInteger('-2', 'parent', -2, 10), -2);
+
+        $exception = $this->badRequest(fn () => $this->probe()->callInteger('-2', 'parent', 0, 10));
+
+        Assert::same($exception->getStatusCode(), 400);
+    }
+
+    #[DataSet([0, 0], 'zero int')]
+    #[DataSet([10, 10], 'upper bound int')]
+    #[DataSet(['0', 0], 'zero string')]
+    #[DataSet(['7', 7], 'decimal string')]
+    public function integerAcceptsInRangeIntsAndDecimalStrings(mixed $value, int $expected): void
+    {
+        Assert::same($this->probe()->callInteger($value), $expected);
+    }
+
+    #[DataSet([-1], 'below min')]
+    #[DataSet([11], 'above max')]
+    #[DataSet([1.5], 'float')]
+    #[DataSet([true], 'bool')]
+    #[DataSet([null], 'null')]
+    #[DataSet(['01'], 'leading zero')]
+    #[DataSet(['5x'], 'trailing junk')]
+    #[DataSet(['999999999999999999999999'], 'overflow')]
+    public function integerRejectsOutOfRangeOrLossyValues(mixed $value): void
+    {
+        $exception = $this->badRequest(fn () => $this->probe()->callInteger($value));
+
+        Assert::same($exception->getStatusCode(), 400);
+        Assert::same($exception->getMessage(), 'Field "order" must be an integer between 0 and 10');
     }
 
     #[DataSet([true, true], 'boolean true')]
@@ -163,6 +345,7 @@ final class AbstractControllerTest
     public function paginateShapesAcollectionResponse(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows']  = [['id' => 1]];
         $GLOBALS['api_total'] = 5;
 
@@ -182,6 +365,7 @@ final class AbstractControllerTest
     public function paginateAppliesTransformToEachRow(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows']  = [['id' => 1]];
         $GLOBALS['api_total'] = 1;
 
@@ -200,6 +384,34 @@ final class AbstractControllerTest
         $response = $probe->run((new Query())->from('{db_prefix}boards')->where('1=1'));
 
         Assert::same(Environment::readResponse($response)['payload']['data'], [['wrapped' => ['id' => 1]]]);
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function categorySchema(): array
+    {
+        return [
+            'name'        => ['type' => 'string', 'column' => 'name', 'length' => 255],
+            'description' => ['type' => 'raw', 'column' => 'description'],
+            'order'       => ['type' => 'int', 'column' => 'cat_order', 'optional' => true],
+        ];
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function typedSchema(): array
+    {
+        return [
+            'flag'  => ['type' => 'bool'],
+            'count' => ['type' => 'int'],
+            'email' => ['type' => 'email'],
+            'date'  => ['type' => 'date'],
+            'tags'  => ['type' => 'int_list'],
+            'ratio' => ['type' => 'float'],
+            'text'  => ['type' => 'string'],
+        ];
     }
 
     private function probe(array $query = [], array $body = []): ProbeController

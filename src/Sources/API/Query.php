@@ -129,8 +129,7 @@ class Query
 		global $smcFunc;
 
 		$request = $smcFunc['db_query']('', $this->singleQuery(), $this->params);
-
-		$row = $smcFunc['db_fetch_assoc']($request) ?: null;
+		$row     = $smcFunc['db_fetch_assoc']($request) ?: null;
 
 		$smcFunc['db_free_result']($request);
 
@@ -145,8 +144,7 @@ class Query
 		global $smcFunc;
 
 		$request = $smcFunc['db_query']('', $this->existsQuery(), $this->params);
-
-		$exists = $smcFunc['db_num_rows']($request) > 0;
+		$exists  = $smcFunc['db_num_rows']($request) > 0;
 
 		$smcFunc['db_free_result']($request);
 

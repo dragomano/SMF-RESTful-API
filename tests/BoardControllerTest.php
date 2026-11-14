@@ -31,6 +31,7 @@ final class BoardControllerTest
     public function indexReturnsTransformedBoards(): void
     {
         Environment::reset();
+
         $GLOBALS['api_total'] = 1;
         $GLOBALS['api_rows']  = [self::BOARD_ROW];
 
@@ -53,6 +54,7 @@ final class BoardControllerTest
     public function indexScopedToAcategoryChecksItExists(): void
     {
         Environment::reset();
+
         $GLOBALS['api_num_rows'] = 1;
         $GLOBALS['api_total']    = 1;
         $GLOBALS['api_rows']     = [self::BOARD_ROW];
@@ -78,6 +80,7 @@ final class BoardControllerTest
     public function indexScopedToAmissingCategoryIsNotFound(): void
     {
         Environment::reset();
+
         $GLOBALS['api_num_rows'] = 0;
 
         $exception = $this->error(fn () => (new BoardController(Environment::request()))->index(['cat_id' => '99']));
@@ -88,6 +91,7 @@ final class BoardControllerTest
     public function showReturnsAboard(): void
     {
         Environment::reset();
+
         $GLOBALS['api_rows'] = [self::BOARD_ROW];
 
         $response = (new BoardController(Environment::request()))->show(['id' => '4']);
@@ -107,9 +111,13 @@ final class BoardControllerTest
     public function storeCreatesAboardInsideAcategory(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
         $GLOBALS['api_num_rows']    = 1;
         $GLOBALS['api_new_id']      = 15;
+
+        // The created board is read back through the same query as show().
+        $GLOBALS['api_rows'] = [['id_board' => '15'] + self::BOARD_ROW];
 
         // A string "category" (as a form request delivers) makes the (int) cast
         // on the target_category observable.
@@ -130,8 +138,9 @@ final class BoardControllerTest
     public function storeRejectsAmissingCategory(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
-        $GLOBALS['api_num_rows'] = 0;
+        $GLOBALS['api_num_rows']    = 0;
 
         $request   = Environment::request('POST', ['category' => 99, 'name' => 'Ideas']);
         $exception = $this->error(fn () => (new BoardController($request))->store([]));
@@ -142,6 +151,7 @@ final class BoardControllerTest
     public function storeValidatesRequiredFields(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
 
         $request   = Environment::request('POST', ['name' => 'Ideas']);
@@ -163,9 +173,11 @@ final class BoardControllerTest
     public function updateAppliesTheNameAndPassesTheOriginalCategory(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
+
         $GLOBALS['api_rows'] = [
-            ['id_board' => '4', 'id_cat' => '2'],
+            ['id_board' => '4', 'id_cat' => '2', 'id_parent' => '0'],
             ['name' => 'Renamed'] + self::BOARD_ROW,
         ];
 
@@ -181,12 +193,13 @@ final class BoardControllerTest
     public function updateLeavesTheCategoryUntouchedWhenUnchanged(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
         // Current category is the string "2"; sending the string "2" back must be
         // recognised as "no change" (both sides go through (int)), so no move
         // options and no category-existence lookup are triggered.
         $GLOBALS['api_rows'] = [
-            ['id_board' => '4', 'id_cat' => '2'],
+            ['id_board' => '4', 'id_cat' => '2', 'id_parent' => '0'],
             self::BOARD_ROW,
         ];
 
@@ -200,10 +213,11 @@ final class BoardControllerTest
     public function updateMovesTheBoardToAnotherCategory(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
         $GLOBALS['api_num_rows'] = 1; // the target category exists
         $GLOBALS['api_rows'] = [
-            ['id_board' => '4', 'id_cat' => '2'],
+            ['id_board' => '4', 'id_cat' => '2', 'id_parent' => '0'],
             self::BOARD_ROW,
         ];
 
@@ -220,6 +234,7 @@ final class BoardControllerTest
     public function replaceRejectsAmissingBoard(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
 
         $request   = Environment::request('PUT', ['name' => 'X', 'description' => 'Y']);
@@ -231,7 +246,9 @@ final class BoardControllerTest
     public function replaceDemandsEveryWritableField(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
+
         // The board exists, but only "name" is supplied. A full replace (PUT)
         // must reject the partial body; a partial update (PATCH) would accept it.
         $GLOBALS['api_rows'] = [['id_board' => '4', 'id_cat' => '2']];
@@ -245,6 +262,7 @@ final class BoardControllerTest
     public function destroyRemovesTheBoard(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
         $GLOBALS['api_num_rows'] = 1;
 
@@ -257,7 +275,9 @@ final class BoardControllerTest
     public function destroyMovesChildrenToAnotherBoard(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
+
         // The board being deleted and the move target both exist.
         $GLOBALS['api_num_rows_queue'] = [1, 1];
 
@@ -272,6 +292,7 @@ final class BoardControllerTest
     public function destroyRejectsMovingChildrenIntoTheSameBoard(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
         $GLOBALS['api_num_rows_queue'] = [1, 1];
 
@@ -284,7 +305,9 @@ final class BoardControllerTest
     public function destroyRejectsMoveTargetEqualToTheBoardEvenWhenAbsent(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
+
         // Guard passes; the second existence lookup would report "missing".
         $GLOBALS['api_num_rows_queue'] = [1, 0];
 
@@ -297,7 +320,9 @@ final class BoardControllerTest
     public function destroyRejectsAmissingMoveTarget(): void
     {
         Environment::reset();
+
         $GLOBALS['api_permissions'] = ['manage_boards'];
+
         // The board exists, but the move target does not.
         $GLOBALS['api_num_rows_queue'] = [1, 0];
 
@@ -314,6 +339,330 @@ final class BoardControllerTest
         $exception = $this->error(fn () => (new BoardController(Environment::request()))->destroy(['id' => '4']));
 
         Assert::same($exception->getStatusCode(), 403);
+    }
+
+    public function replaceKeepsOrderAndCategoryOptional(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['manage_boards'];
+        $GLOBALS['api_rows']        = [self::BOARD_ROW, self::BOARD_ROW];
+
+        $response = (new BoardController(Environment::request('PUT', ['name' => 'Chat', 'description' => 'General chat'])))->replace(['id' => '4']);
+
+        Assert::same(Environment::readResponse($response)['status'], 200);
+        Assert::same($GLOBALS['api_modify_board'][0], [4, ['old_id_cat' => 2, 'board_name' => 'Chat', 'board_description' => 'General chat']]);
+    }
+
+    public function orderSelectsThePositionAmongSiblings(): void
+    {
+        // Siblings in category 2 at the root level, ordered: 7, 4 (the edited
+        // board), 8. Position "order" is 0-based, so 2 is the last slot.
+        $siblings = [
+            ['id_board' => '7', 'id_parent' => '0', 'board_order' => '1'],
+            ['id_board' => '4', 'id_parent' => '0', 'board_order' => '2'],
+            ['id_board' => '8', 'id_parent' => '0', 'board_order' => '3'],
+            null,
+        ];
+
+        foreach ([[0, 'before', 7], [2, 'after', 8]] as [$order, $direction, $target]) {
+            Environment::reset();
+
+            $GLOBALS['api_permissions'] = ['manage_boards'];
+            $GLOBALS['api_rows']        = [self::BOARD_ROW, ...$siblings, self::BOARD_ROW];
+
+            $response = (new BoardController(Environment::request('PATCH', ['order' => $order])))->update(['id' => '4']);
+
+            Assert::same(Environment::readResponse($response)['status'], 200);
+            Assert::same($GLOBALS['api_modify_board'][0], [4, [
+                'old_id_cat'   => 2,
+                'move_to'      => $direction,
+                'target_board' => $target,
+            ]]);
+
+            $query = $GLOBALS['api_queries'][1];
+
+            Assert::same($query['params'], ['category' => 2]);
+            Assert::true(str_contains($query['query'], 'id_cat = {int:category}'));
+        }
+    }
+
+    public function orderInTheCurrentPositionDoesNotMoveTheBoard(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['manage_boards'];
+
+        // Board 4 is second among the root-level siblings of category 2.
+        $GLOBALS['api_rows'] = [
+            self::BOARD_ROW,
+            ['id_board' => '7', 'id_parent' => '0', 'board_order' => '1'],
+            ['id_board' => '4', 'id_parent' => '0', 'board_order' => '2'],
+            null,
+            self::BOARD_ROW,
+        ];
+
+        (new BoardController(Environment::request('PATCH', ['order' => 1])))->update(['id' => '4']);
+
+        Assert::same($GLOBALS['api_modify_board'][0], [4, ['old_id_cat' => 2]]);
+    }
+
+    public function orderCountsOnlySiblingsOfTheSameParent(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['manage_boards'];
+
+        $GLOBALS['api_rows'] = [
+            self::BOARD_ROW,
+            ['id_board' => '4', 'id_parent' => '0', 'board_order' => '1'],
+            // A child board shares the category but not the parent level.
+            ['id_board' => '9', 'id_parent' => '4', 'board_order' => '2'],
+            ['id_board' => '7', 'id_parent' => '0', 'board_order' => '3'],
+            null,
+            self::BOARD_ROW,
+        ];
+
+        // Sibling 9 is a child of board 4, so only board 7 counts: position 1
+        // means "after the last root-level sibling".
+        (new BoardController(Environment::request('PATCH', ['order' => 1])))->update(['id' => '4']);
+
+        Assert::same($GLOBALS['api_modify_board'][0], [4, [
+            'old_id_cat'   => 2,
+            'move_to'      => 'after',
+            'target_board' => 7,
+        ]]);
+    }
+
+    public function orderRejectsLossyValuesAndPositionsPastTheLastSibling(): void
+    {
+        // Board 7 is the only sibling, so 0 and 1 are the valid positions.
+        foreach ([-1, 1.5, true, null, [], '1e0', '1x', '999999999999999999999999', 2] as $order) {
+            Environment::reset();
+
+            $GLOBALS['api_permissions'] = ['manage_boards'];
+
+            $GLOBALS['api_rows'] = [
+                self::BOARD_ROW,
+                ['id_board' => '7', 'id_parent' => '0', 'board_order' => '2'],
+                null,
+            ];
+
+            $exception = $this->error(fn () => (new BoardController(Environment::request('PATCH', ['order' => $order])))->update(['id' => '4']));
+
+            Assert::same($exception->getStatusCode(), 400);
+            Assert::same($GLOBALS['api_modify_board'], []);
+        }
+    }
+
+    public function categoryOnlyPatchMovesAndOrderSelectsTheDestinationPosition(): void
+    {
+        // Without "order" the board drops to the bottom; with 1 it lands after
+        // the only root-level board of the destination category.
+        foreach ([[], ['order' => 1]] as $extra) {
+            Environment::reset();
+
+            $GLOBALS['api_permissions'] = ['manage_boards'];
+            $GLOBALS['api_num_rows']    = 1;
+            $GLOBALS['api_rows']        = [self::BOARD_ROW];
+
+            if ($extra !== []) {
+                $GLOBALS['api_rows'][] = ['id_board' => '8', 'id_parent' => '0', 'board_order' => '6'];
+                $GLOBALS['api_rows'][] = null;
+            }
+
+            $GLOBALS['api_rows'][] = self::BOARD_ROW;
+
+            (new BoardController(Environment::request('PATCH', ['category' => '5'] + $extra)))->update(['id' => '4']);
+
+            $options = ['old_id_cat' => 2, 'move_to' => $extra === [] ? 'bottom' : 'after', 'target_category' => 5];
+            if ($extra !== []) {
+                $options['target_board'] = 8;
+            }
+
+            Assert::same($GLOBALS['api_modify_board'][0], [4, $options]);
+        }
+    }
+
+    public function categoryRejectsLossyCastsAndUnknownTargets(): void
+    {
+        foreach ([null, true, [], '2x', 2.5, 0, -1, '999999999999999999999999', 99] as $category) {
+            Environment::reset();
+
+            $GLOBALS['api_permissions'] = ['manage_boards'];
+            $GLOBALS['api_rows']        = [self::BOARD_ROW];
+
+            $exception = $this->error(fn () => (new BoardController(Environment::request('PATCH', ['category' => $category])))->update(['id' => '4']));
+
+            Assert::same($exception->getStatusCode(), $category === 99 ? 404 : 400);
+            Assert::same($GLOBALS['api_modify_board'], []);
+        }
+    }
+
+    public function updateWritesTheAccessLists(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['manage_boards'];
+
+        $GLOBALS['api_rows'] = [
+            ['id_board' => '4', 'id_cat' => '2', 'id_parent' => '0'],
+            self::BOARD_ROW,
+        ];
+
+        (new BoardController(Environment::request('PATCH', ['member_groups' => [0, 2], 'deny_member_groups' => '5'])))->update(['id' => '4']);
+
+        // modifyBoard() wants plain arrays of ids, sorted for a stable payload.
+        Assert::same($GLOBALS['api_modify_board'][0], [4, [
+            'old_id_cat'    => 2,
+            'access_groups' => [0, 2],
+            'deny_groups'   => [5],
+        ]]);
+    }
+
+    public function updateWritesTheRemainingBoardSettings(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['manage_boards'];
+
+        $GLOBALS['api_rows'] = [
+            ['id_board' => '4', 'id_cat' => '2', 'id_parent' => '0'],
+            self::BOARD_ROW,
+        ];
+
+        (new BoardController(Environment::request('PATCH', [
+            'id_profile'     => 2,
+            'id_theme'       => 3,
+            'override_theme' => true,
+            'count_posts'    => true,
+            'redirect'       => 'https://example.test',
+        ])))->update(['id' => '4']);
+
+        Assert::same($GLOBALS['api_modify_board'][0], [4, [
+            'old_id_cat'     => 2,
+            'profile'        => 2,
+            'board_theme'    => 3,
+            'override_theme' => true,
+            // SMF stores the inverse: 0 means "this board counts posts".
+            'posts_count'    => 0,
+            'redirect'       => 'https://example.test',
+        ]]);
+    }
+
+    public function storeCreatesAchildBoardUnderItsParent(): void
+    {
+
+        Environment::reset();
+        $GLOBALS['api_permissions'] = ['manage_boards'];
+        $GLOBALS['api_new_id']      = 15;
+        $GLOBALS['api_num_rows']    = 1;
+
+        $GLOBALS['api_rows'] = [
+            // The parent lookup, then the read-back of the created board.
+            ['id_board' => '4', 'id_cat' => '2', 'id_parent' => '0'],
+            ['id_board' => '15'] + self::BOARD_ROW,
+        ];
+
+        (new BoardController(Environment::request('POST', ['category' => 2, 'parent' => 4, 'name' => 'Child', 'description' => 'd'])))->store([]);
+
+        Assert::same($GLOBALS['api_create_board'][0], [
+            'board_name'        => 'Child',
+            'board_description' => 'd',
+            'move_to'           => 'child',
+            'target_category'   => 2,
+            'target_board'      => 4,
+        ]);
+    }
+
+    public function storeRefusesAParentFromAnotherCategory(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['manage_boards'];
+        $GLOBALS['api_num_rows']    = 1;
+        $GLOBALS['api_rows']        = [['id_board' => '4', 'id_cat' => '3']];
+
+        $exception = $this->error(
+            fn () => (new BoardController(Environment::request('POST', ['category' => 2, 'parent' => 4, 'name' => 'Child', 'description' => 'd'])))->store([])
+        );
+
+        Assert::same($exception->getStatusCode(), 400);
+        Assert::same($GLOBALS['api_create_board'], []);
+    }
+
+    public function updateReparentsBoardsAndHandlesMissingParents(): void
+    {
+        foreach ([0, 8, 99] as $parent) {
+            Environment::reset();
+
+            $GLOBALS['api_permissions'] = ['manage_boards'];
+            $GLOBALS['api_num_rows']    = $parent === 99 ? 0 : 1;
+            $GLOBALS['api_rows']        = [ ['id_parent' => '3'] + self::BOARD_ROW ];
+
+            if ($parent === 8) {
+                $GLOBALS['api_rows'][] = ['id_board' => '8', 'id_cat' => '2'];
+            }
+
+            $GLOBALS['api_rows'][] = self::BOARD_ROW;
+
+            $controller = new BoardController(Environment::request('PATCH', ['parent' => $parent]));
+
+            if ($parent === 99) {
+                Assert::same($this->error(fn () => $controller->update(['id' => '4']))->getStatusCode(), 404);
+                Assert::same($GLOBALS['api_modify_board'], []);
+            } else {
+                $controller->update(['id' => '4']);
+
+                $expected = $parent === 0
+                    ? ['move_to' => 'bottom', 'target_category' => 2]
+                    : ['move_to' => 'child', 'target_board' => 8];
+
+                Assert::same($GLOBALS['api_modify_board'][0], [4, ['old_id_cat' => 2] + $expected]);
+            }
+        }
+    }
+
+    public function storePositionsTheFirstBoardWithoutSiblings(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['manage_boards'];
+        $GLOBALS['api_num_rows']    = 1;
+        $GLOBALS['api_rows']        = [null, self::BOARD_ROW];
+
+        (new BoardController(Environment::request('POST', ['category' => 2, 'name' => 'First', 'order' => 0])))->store([]);
+
+        Assert::same($GLOBALS['api_create_board'][0]['move_to'], 'bottom');
+        Assert::same($GLOBALS['api_create_board'][0]['target_category'], 2);
+    }
+
+    public function storeRejectsMissingNameCategoryAndParent(): void
+    {
+        foreach ([['category' => 2, 'name' => ''], ['name' => 'X'], ['category' => 2, 'name' => 'X', 'parent' => 8]] as $body) {
+            Environment::reset();
+
+            $GLOBALS['api_permissions'] = ['manage_boards'];
+            $GLOBALS['api_num_rows']    = 1;
+
+            $exception = $this->error(fn () => (new BoardController(Environment::request('POST', $body)))->store([]));
+
+            Assert::same($exception->getStatusCode(), isset($body['parent']) ? 404 : 400);
+            Assert::same($GLOBALS['api_create_board'], []);
+        }
+    }
+
+    public function writeAndDeleteRequirePermissionAndNonEmptyName(): void
+    {
+        Environment::reset();
+
+        Assert::same($this->error(fn () => (new BoardController(Environment::request('PATCH', ['name' => 'X'])))->update(['id' => '4']))->getStatusCode(), 403);
+        Assert::same($this->error(fn () => (new BoardController(Environment::request('DELETE')))->destroy(['id' => '4']))->getStatusCode(), 403);
+
+        $GLOBALS['api_permissions'] = ['manage_boards'];
+        $GLOBALS['api_rows']        = [self::BOARD_ROW];
+
+        Assert::same($this->error(fn () => (new BoardController(Environment::request('PATCH', ['name' => ''])))->update(['id' => '4']))->getStatusCode(), 400);
     }
 
     private function error(callable $callback): ApiException

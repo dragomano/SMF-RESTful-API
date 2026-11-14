@@ -115,8 +115,7 @@ class Integration
 	 */
 	public function adminSearch(array &$language_files, array $include_files, array &$settings_search): void
 	{
-		$language_files[] = 'API';
-
+		$language_files[]  = 'API';
 		$settings_search[] = [[$this, 'settings'], 'area=modsettings;sa=api'];
 	}
 
@@ -204,7 +203,6 @@ class Integration
 
 		$tokens  = (array) ($_POST['api_key_token'] ?? []);
 		$members = (array) ($_POST['api_key_member'] ?? []);
-
 		$map     = [];
 		$rows    = [];
 		$invalid = false;
