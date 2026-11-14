@@ -1,14 +1,10 @@
 <?php declare(strict_types=1);
 
 /**
- * CategoryController.php
- *
  * @package SMF RESTful API
  * @author Bugo <bugo@dragomano.ru>
  * @copyright 2026 Bugo
  * @license https://opensource.org/licenses/MIT The MIT License
- *
- * @version 0.1
  */
 
 namespace SMF\API\Controllers;

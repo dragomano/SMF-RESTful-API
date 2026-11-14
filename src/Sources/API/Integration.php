@@ -1,8 +1,6 @@
 <?php declare(strict_types=1);
 
 /**
- * Integration.php
- *
  * Entry point and admin wiring for the SMF RESTful API modification.
  *
  * The mod exposes a single SMF action (index.php?action=api) that is handed
@@ -13,8 +11,6 @@
  * @author Bugo <bugo@dragomano.ru>
  * @copyright 2026 Bugo
  * @license https://opensource.org/licenses/MIT The MIT License
- *
- * @version 0.1
  */
 
 namespace SMF\API;
