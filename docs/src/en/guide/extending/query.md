@@ -1,14 +1,12 @@
 ---
-title: Query & Controller
 description: Query fluent builder, fetch modes (paginate/first/exists/fetchAll), and the full AbstractController helper surface including writableColumns, boolean and transform.
-order: 3
 ---
 
-# Query — Building and Running Queries
+# Query — Building and Running Queries { #query-building-and-running-queries }
 
 `SMF\API\Query` is a small fluent builder. FROM/WHERE is written once and reused by every fetch mode; `LIMIT`, `COUNT`, and pagination are added automatically.
 
-## Building a query
+## Building a query { #building-a-query }
 
 - `->from()` (with JOINs)
 - `->where()`
@@ -18,14 +16,14 @@ order: 3
 
 The builder itself can also run a query: `first()`, `exists()`, `fetchAll()` and `fetchPage($limit, $offset)` — the last one returns the page rows together with the grand total.
 
-## Running via the controller helpers
+## Running via the controller helpers { #running-via-the-controller-helpers }
 
 - `$this->paginate($query)` — a collection with pagination meta; every row passes through `transform()`.
 - `$this->first($query)` — a single row or `null` (for `show` and checks).
 - `$this->exists($query)` — a `bool` (for validation in `store`).
 - `$this->fetchAll($query)` — all rows without pagination (raw arrays).
 
-## What's available in the controller
+## What's available in the controller { #whats-available-in-the-controller }
 
 - `$this->request` — the `Request` object. It is read through accessors, not through public properties: `getMethod()`, `getSegments()`, `segment($index)`, `header($name)`, `query($name)`, `input($name)` and `all()` (the whole decoded body).
 - `$this->response()` — a new `Response` (`->data()`, `->collection()`, `->status()`, `->header()`, `->error()`).
@@ -39,11 +37,13 @@ The builder itself can also run a query: `first()`, `exists()`, `fetchAll()` and
 - `$this->noContent()` — an empty `204` response for successful operations without a body (usually `DELETE`).
 - identity and permissions come from the global `$user_info` (set up by the `Authenticator`), and checks use the native `allowedTo()` / `$user_info['is_admin']`.
 
-### The writable field schema
+### The writable field schema { #the-writable-field-schema }
 
 `writableColumns()` maps the body onto SMF columns through a schema — field name => description. Here is the schema of the built-in `categories` resource, so it can be compared with `CategoryController`:
 
-```php "schema"
+```php title="schema"
+<?php declare(strict_types=1);
+
 private const WRITABLE = [
 	'name'         => ['type' => 'string', 'column' => 'name', 'length' => 255],
 	'description'  => ['type' => 'raw', 'column' => 'description'],
@@ -74,15 +74,18 @@ The value types behave like this:
 
 The third argument of `writableColumns()` is a list of aliases: SMF column names that clients may use instead of the field names, e.g. `['id_cat' => 'category']`. The alias is only used when the field itself was not sent.
 
-::: warning "Writes go through SMF native functions"
-For mutating actions (`PUT` / `PATCH` / `DELETE`), perform the write through SMF's native functions (`modifyBoard`, `deleteMembers`, `modifyPost`, and so on) — `Query` is read-only. *Check permissions yourself* with `allowedTo()` before calling these functions and throw an `ApiException`: on denial, many core functions terminate the request with a fatal HTML error rather than JSON.
-:::
+!!! warning "Writes go through SMF native functions"
 
-## Example: transform shape
+    For mutating actions (`PUT` / `PATCH` / `DELETE`), perform the write through SMF's native functions (`modifyBoard`, `deleteMembers`, `modifyPost`, and so on) — `Query` is read-only. *Check permissions yourself* with `allowedTo()` before calling these functions and throw an `ApiException`: on denial, many core functions terminate the request with a fatal HTML error rather than JSON.
+
+
+## Example: transform shape { #example-transform-shape }
 
 Override `transform()` to define the outward shape of your resource — `paginate()` calls it for every row:
 
-```php "transform"
+```php title="transform"
+<?php declare(strict_types=1);
+
 protected function transform(array $row): array
 {
 	return [
@@ -92,4 +95,4 @@ protected function transform(array $row): array
 }
 ```
 
-See also [Adding a Resource](/guide/extending/adding-resource) for the full controller example.
+See also [Adding a Resource](adding-resource.md) for the full controller example.

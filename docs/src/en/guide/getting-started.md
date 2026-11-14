@@ -1,30 +1,28 @@
 ---
-title: Getting Started
 description: What SMF RESTful API is, how it routes requests, what resources it exposes, how authentication works, and where keys are managed.
-order: 1
 ---
 
-# Getting Started
+# Getting Started { #getting-started }
 
 *SMF RESTful API* is a modification for [SMF 2.1](https://github.com/SimpleMachines/SMF2.1) that layers a full-featured REST interface with JSON responses on top of the engine. The mod registers a single action, `index.php?action=api`, and passes the request to its own router. A resource is addressed as `index.php?action=api;path=v1/members/5`, or, with a rewrite rule in place, as `/api/v1/members/5`.
 
-The full endpoint list — methods, paths, permissions, writable fields and error codes — is in the [API Reference](/guide/api-reference).
+The full endpoint list — methods, paths, permissions, writable fields and error codes — is in the [API Reference](api-reference.md).
 
-## Enabling the API
+## Enabling the API { #enabling-the-api }
 
-The mod ships switched off. Open *Admin → Configuration → Modifications → RESTful API* and:
+The mod ships switched off. Open *Admin → Configuration → Modification Settings → RESTful API* and:
 
 - tick **Enable the API** — while it is off every endpoint answers `503 Service Unavailable`;
 - add API keys: each key is an opaque token bound to a member id, and every request made with that key acts with that member's permissions. The page can generate a random token for you.
 
-```bash "First request"
+```bash title="First request"
 curl -H 'Authorization: Bearer YOUR_KEY' \
      'https://forum.example.com/index.php?action=api;path=v1/members/5'
 ```
 
 Only fully activated accounts (`is_activated = 1`) can drive the API.
 
-## Resources and operations
+## Resources and operations { #resources-and-operations }
 
 Out of the box you get the `categories`, `members`, `groups`, `boards`, `topics`, and `posts` resources with read (`GET`) and write (`POST` / `PUT` / `PATCH` / `DELETE`) operations.
 
@@ -34,24 +32,24 @@ Out of the box you get the `categories`, `members`, `groups`, `boards`, `topics`
 
 Every collection is paginated with `limit` (1–100, default 25) and `offset`; every answer carries the resource in `data` and, for collections, pagination metadata in `meta`.
 
-See [API Reference](/guide/api-reference) for the endpoints and [Custom Authentication](/guide/extending/authentication) for the full authentication flow and custom schemes.
+See [API Reference](api-reference.md) for the endpoints and [Custom Authentication](extending/authentication.md) for the full authentication flow and custom schemes.
 
-## How routing works
+## How routing works { #how-routing-works }
 
 - The mod exposes a single SMF action `action=api`.
 - The `path` parameter carries the resource path, e.g. `v1/members/5`. When clean-URL rewrites are enabled, the leading `api` segment is stripped automatically and the rest lands in `path`.
 - The `Router` strips and validates the leading version segment (`v1`), so route patterns are version-agnostic. Only `v1` is supported at the moment. Query parameters such as `?limit=25&offset=50` are preserved.
 - `GET`, `POST`, `PUT`, `PATCH` and `DELETE` are supported. Clients that cannot send verbs other than `GET` and `POST` may override the method with the `X-HTTP-Method-Override` header or the `_method` query parameter.
 
-See [Clean URLs](/guide/clean-urls) for rewrite rules.
+See [Clean URLs](clean-urls.md) for rewrite rules.
 
-## Request and response format
+## Request and response format { #request-and-response-format }
 
 - The request body is read as JSON when the `Content-Type` header contains `application/json`; otherwise the ordinary form-encoded payload is used.
 - A single resource is returned as `{"data": {...}}`, a collection as `{"data": [...], "meta": {"total": 42, "limit": 25, "offset": 0, "count": 1}}`, and a failure as `{"error": {"code": "not_found", "message": "Member not found"}}`.
 
-## Hooks-only and settings
+## Hooks-only and settings { #hooks-only-and-settings }
 
-The mod does not edit core files (it works only through hooks), and keys are set on the "Admin → Configuration → Modifications → RESTful API" page.
+The mod does not edit core files (it works only through hooks), and keys are set on the "Admin → Configuration → Modification Settings → RESTful API" page.
 
-Third-party mods can extend the API — register their own routes and authentication schemes, tweak responses — through integration hooks. How to do this is described in detail under [Extending the API](/guide/extending/overview).
+Third-party mods can extend the API — register their own routes and authentication schemes, tweak responses — through integration hooks. How to do this is described in detail under [Extending the API](extending/overview.md).

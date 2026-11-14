@@ -1,10 +1,8 @@
 ---
-title: API Reference
 description: Complete endpoint list of SMF RESTful API — methods, paths, required permissions, writable fields, response envelope, pagination and error codes.
-order: 3
 ---
 
-# API Reference
+# API Reference { #api-reference }
 
 Every endpoint lives under a single SMF action, `index.php?action=api`, and takes the resource path in the `path` parameter:
 
@@ -12,15 +10,16 @@ Every endpoint lives under a single SMF action, `index.php?action=api`, and take
 index.php?action=api;path=v1/members/5
 ```
 
-With a rewrite rule in place the same resource is addressed as `/api/v1/members/5` — see [Clean URLs](/guide/clean-urls). Every path in the tables below is written relative to `v1`, so the full address is `index.php?action=api;path=v1/<path>`.
+With a rewrite rule in place the same resource is addressed as `/api/v1/members/5` — see [Clean URLs](clean-urls.md). Every path in the tables below is written relative to `v1`, so the full address is `index.php?action=api;path=v1/<path>`.
 
-::: warning "The API must be enabled"
-The mod ships switched off. Turn it on at *Admin → Configuration → Modifications → RESTful API* ("Enable the API"). While it is off, every endpoint answers `503 Service Unavailable` with the error code `service_unavailable`.
-:::
+!!! warning "The API must be enabled"
 
-## Request basics
+    The mod ships switched off. Turn it on at *Admin → Configuration → Modification Settings → RESTful API* ("Enable the API"). While it is off, every endpoint answers `503 Service Unavailable` with the error code `service_unavailable`.
 
-### Authentication
+
+## Request basics { #request-basics }
+
+### Authentication { #authentication }
 
 Every request needs an API key; the key selects the member whose permissions apply. It is taken from the first source that is present:
 
@@ -28,15 +27,15 @@ Every request needs an API key; the key selects the member whose permissions app
 2. the `X-API-Key: <key>` header;
 3. the `api_key` query parameter.
 
-Keys are managed at *Admin → Configuration → Modifications → RESTful API*: each key is an opaque token bound to a member id. See [Custom Authentication](/guide/extending/authentication) for replacing the scheme with your own.
+Keys are managed at *Admin → Configuration → Modification Settings → RESTful API*: each key is an opaque token bound to a member id. See [Custom Authentication](extending/authentication.md) for replacing the scheme with your own.
 
 Only fully activated accounts (`is_activated = 1`) can drive the API. A missing, unknown or deactivated key answers `401` with the code `unauthorized`.
 
-### Version prefix
+### Version prefix { #version-prefix }
 
 The first path segment is the API contract version. Only `v1` is accepted; anything else answers `404` with the code `not_found` and the message `Unsupported API version: <segment>`.
 
-### Methods
+### Methods { #methods }
 
 `GET`, `POST`, `PUT`, `PATCH` and `DELETE` are supported. A known path with an unsupported method answers `405` with the code `method_not_allowed`.
 
@@ -48,22 +47,22 @@ POST /index.php?action=api&path=v1/members/5&_method=PATCH
 
 The override is only honoured for `POST` requests.
 
-### Request body
+### Request body { #request-body }
 
 The body is parsed as JSON when the `Content-Type` header contains `application/json`; otherwise the ordinary form-encoded payload is used. Malformed JSON answers `400` with the code `bad_request`.
 
-```json "Request body example"
+```json title="Request body example"
 {
   "username": "demo",
   "email": "demo@example.com"
 }
 ```
 
-### Reserved query parameters
+### Reserved query parameters { #reserved-query-parameters }
 
-SMF reserves `board`, `topic`, `msg`, `start` and `action` as query parameters: passing one of them makes the core render a forum page instead of reaching `action=api`. Parent ids therefore travel in the path (`/boards/{board_id}/topics`), never in the query string. See [Adding a Resource](/guide/extending/adding-resource) for the details.
+SMF reserves `board`, `topic`, `msg`, `start` and `action` as query parameters: passing one of them makes the core render a forum page instead of reaching `action=api`. Parent ids therefore travel in the path (`/boards/{board_id}/topics`), never in the query string. See [Adding a Resource](extending/adding-resource.md) for the details.
 
-### Pagination
+### Pagination { #pagination }
 
 Collections accept two query parameters:
 
@@ -72,11 +71,11 @@ Collections accept two query parameters:
 
 Both are clamped to those bounds; out-of-range values are silently corrected rather than rejected.
 
-## Response format
+## Response format { #response-format }
 
-### A single resource
+### A single resource { #a-single-resource }
 
-```json "Response"
+```json title="Response"
 {
   "data": {
     "id": 5,
@@ -85,11 +84,11 @@ Both are clamped to those bounds; out-of-range values are silently corrected rat
 }
 ```
 
-### A collection
+### A collection { #a-collection }
 
 Collections add pagination metadata:
 
-```json "Response"
+```json title="Response"
 {
   "data": [
     { "id": 5, "username": "demo" }
@@ -105,9 +104,9 @@ Collections add pagination metadata:
 
 `total` is the number of matching rows, `count` the number of rows in this page.
 
-### An error
+### An error { #an-error }
 
-```json "Response"
+```json title="Response"
 {
   "error": {
     "code": "not_found",
@@ -118,7 +117,7 @@ Collections add pagination metadata:
 
 `details` is added when the error carries extra information (for example the registration errors of `POST /members`).
 
-### Status codes
+### Status codes { #status-codes }
 
 | Code | Meaning |
 | --- | --- |
@@ -134,15 +133,16 @@ Collections add pagination metadata:
 | `500` | An unexpected error occurred; it is logged (`internal_error`) |
 | `503` | The API is switched off (`service_unavailable`) |
 
-### Headers
+### Headers { #headers }
 
 Every response is sent as `Content-Type: application/json; charset=utf-8` with `X-Content-Type-Options: nosniff`. Additional headers can be added through the `integrate_api_pre_send` hook.
 
-## Categories
+## Categories { #categories }
 
-::: tip "Required fields"
-In the field lists below a field marked *required* is required for a full replace (`PUT`). A creation (`POST`) only demands the fields its endpoint checks explicitly — usually the name and, for boards, the parent category.
-:::
+!!! tip "Required fields"
+
+    In the field lists below a field marked *required* is required for a full replace (`PUT`). A creation (`POST`) only demands the fields its endpoint checks explicitly — usually the name and, for boards, the parent category.
+
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -164,7 +164,7 @@ In the field lists below a field marked *required* is required for a full replac
 
 Writable fields: `name` (required), `description` (required), `order`, `can_collapse`. The SMF column name `cat_order` is accepted instead of `order`.
 
-## Boards
+## Boards { #boards }
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -189,7 +189,7 @@ Writable fields: `name` (required), `description` (required), `order`, `can_coll
 
 Writable fields: `name` (required), `description` (required), `category`, `parent`, `order`, `id_profile`, `id_theme`, `override_theme`, `count_posts`, `member_groups`, `deny_member_groups`, `redirect`. The SMF column names `id_cat`, `id_parent` and `board_order` are accepted as aliases. A parent board has to live in the same category as the board itself.
 
-## Members
+## Members { #members }
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -218,7 +218,7 @@ Writable fields: `username` (required), `name` (required), `email` (required), `
 
 Changing the groups needs `manage_membergroups`; changing `posts`, `warning`, `is_activated`, `secret_question` or `secret_answer` needs `moderate_forum`. Changing the password of another member needs `moderate_forum`.
 
-## Member groups
+## Member groups { #member-groups }
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -245,7 +245,7 @@ Changing the groups needs `manage_membergroups`; changing `posts`, `warning`, `i
 
 Writable fields: `name` (required), `description` (required), `type` (required), `min_posts` (required), `max_messages` (required), `color`, `icons`, `hidden`, `parent`, `tfa_required`. The SMF column names `group_name`, `group_type`, `online_color` and `id_parent` are accepted as aliases. Protected groups (`type = 1`) can only be created, changed or deleted by administrators.
 
-## Topics
+## Topics { #topics }
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -274,7 +274,7 @@ Writable fields: `name` (required), `description` (required), `type` (required),
 
 Writable fields: `subject` (required), `body`, `locked`, `is_sticky`, `approved`, `num_views`, `board`. The SMF column names `sticky` and `id_board` are accepted as aliases. Locking needs `lock_own` / `lock_any`, pinning `make_sticky`, approving `approve_posts` and changing the view counter `moderate_board`.
 
-## Posts
+## Posts { #posts }
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -301,11 +301,12 @@ Writable fields: `subject` (required), `body`, `locked`, `is_sticky`, `approved`
 
 Writable fields: `body` (required), `subject`, `icon`, `smileys_enabled`, `approved`, `poster_name`, `poster_email`, `poster_time`, `modified_reason`. The SMF column name `reason` is accepted as an alias for `modified_reason`. Changing `poster_name`, `poster_email` or `poster_time` needs `moderate_forum`; approving a post needs `approve_posts`.
 
-::: note "Replies name their topic in the body"
-`POST /posts` is the only endpoint that takes its parent in the request body instead of the path: the topic id is sent as the `topic` field. A path such as `/topics/{topic_id}/posts` would collide with the reserved `topic` query parameter of SMF.
-:::
+!!! note "Replies name their topic in the body"
 
-## Third-party routes
+    `POST /posts` is the only endpoint that takes its parent in the request body instead of the path: the topic id is sent as the `topic` field. A path such as `/topics/{topic_id}/posts` would collide with the reserved `topic` query parameter of SMF.
+
+
+## Third-party routes { #third-party-routes }
 
 Routes registered by other mods are addressed exactly like the built-in ones — the version prefix stays part of the URL, the route pattern does not:
 
@@ -313,4 +314,4 @@ Routes registered by other mods are addressed exactly like the built-in ones —
 index.php?action=api&path=v1/widgets
 ```
 
-See [Adding a Resource](/guide/extending/adding-resource) for the registration example.
+See [Adding a Resource](extending/adding-resource.md) for the registration example.

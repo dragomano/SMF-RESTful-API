@@ -1,16 +1,12 @@
 ---
-title: Query и контроллер
 description: Fluent-построитель Query, режимы выборки (paginate/first/exists/fetchAll) и хелперы AbstractController включая writableColumns, boolean и transform.
-order: 3
 ---
 
-{#Query-Building-and-Running-Queries}
-# Query — построение и выполнение запросов
+# Query — построение и выполнение запросов { #query-building-and-running-queries }
 
 `SMF\API\Query` — небольшой fluent-построитель. FROM/WHERE пишется один раз и переиспользуется всеми режимами выборки; `LIMIT`, `COUNT` и пагинация достраиваются автоматически.
 
-{#Building-a-query}
-## Сборка запроса
+## Сборка запроса { #building-a-query }
 
 - `->from()` (с JOIN'ами)
 - `->where()`
@@ -20,16 +16,14 @@ order: 3
 
 Сам построитель тоже умеет выполнять запрос: `first()`, `exists()`, `fetchAll()` и `fetchPage($limit, $offset)` — последний возвращает строки страницы вместе с общим числом строк.
 
-{#Running-via-the-controller-helpers}
-## Запуск через хелперы контроллера
+## Запуск через хелперы контроллера { #running-via-the-controller-helpers }
 
 - `$this->paginate($query)` — коллекция с мета-пагинацией; каждая строка идёт через `transform()`.
 - `$this->first($query)` — одна строка или `null` (для `show` и проверок).
 - `$this->exists($query)` — `bool` (для валидации в `store`).
 - `$this->fetchAll($query)` — все строки без пагинации (сырые массивы).
 
-{#What-s-available-in-the-controller}
-## Что доступно в контроллере
+## Что доступно в контроллере { #whats-available-in-the-controller }
 
 - `$this->request` — объект `Request`. К нему обращаются через аксессоры, а не через публичные свойства: `getMethod()`, `getSegments()`, `segment($index)`, `header($name)`, `query($name)`, `input($name)` и `all()` (всё разобранное тело).
 - `$this->response()` — новый `Response` (`->data()`, `->collection()`, `->status()`, `->header()`, `->error()`).
@@ -43,12 +37,13 @@ order: 3
 - `$this->noContent()` — пустой ответ `204` для успешных операций без тела (обычно `DELETE`).
 - личность и права — из глобального `$user_info` (его настраивает `Authenticator`), проверки — штатным `allowedTo()` / `$user_info['is_admin']`.
 
-{#The-writable-field-schema}
-### Схема изменяемых полей
+### Схема изменяемых полей { #the-writable-field-schema }
 
 `writableColumns()` сопоставляет тело запроса с колонками SMF через схему — имя поля => описание. Ниже схема встроенного ресурса `categories`, её можно сравнить с `CategoryController`:
 
-```php "schema"
+```php title="schema"
+<?php declare(strict_types=1);
+
 private const WRITABLE = [
 	'name'         => ['type' => 'string', 'column' => 'name', 'length' => 255],
 	'description'  => ['type' => 'raw', 'column' => 'description'],
@@ -79,16 +74,18 @@ private const WRITABLE = [
 
 Третий аргумент `writableColumns()` — список псевдонимов: имена колонок SMF, которые клиент может использовать вместо имён полей, например `['id_cat' => 'category']`. Псевдоним используется, только если само поле не прислано.
 
-::: warning "Запись — через штатные функции SMF"
-Для изменяющих действий (`PUT` / `PATCH` / `DELETE`) выполняйте запись через штатные функции SMF (`modifyBoard`, `deleteMembers`, `modifyPost` и т.п.) — `Query` предназначен только для чтения. Права *проверяйте сами* через `allowedTo()` до вызова этих функций и бросайте `ApiException`: многие функции ядра при отказе завершают запрос фатальной HTML-ошибкой, а не JSON.
-:::
+!!! warning "Запись — через штатные функции SMF"
 
-{#Example-transform-shape}
-## Пример: форма transform
+    Для изменяющих действий (`PUT` / `PATCH` / `DELETE`) выполняйте запись через штатные функции SMF (`modifyBoard`, `deleteMembers`, `modifyPost` и т.п.) — `Query` предназначен только для чтения. Права *проверяйте сами* через `allowedTo()` до вызова этих функций и бросайте `ApiException`: многие функции ядра при отказе завершают запрос фатальной HTML-ошибкой, а не JSON.
+
+
+## Пример: форма transform { #example-transform-shape }
 
 Переопределите `transform()`, чтобы задать внешний вид ресурса — `paginate()` вызывает его для каждой строки:
 
-```php "transform"
+```php title="transform"
+<?php declare(strict_types=1);
+
 protected function transform(array $row): array
 {
 	return [
@@ -98,4 +95,4 @@ protected function transform(array $row): array
 }
 ```
 
-См. также [Добавление ресурса](/ru/guide/extending/adding-resource) с полным примером контроллера.
+См. также [Добавление ресурса](adding-resource.md) с полным примером контроллера.

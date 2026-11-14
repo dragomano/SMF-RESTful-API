@@ -1,0 +1,7 @@
+# Zensical builds the site, zensical-i18n builds its two locales.
+# zensical-i18n 0.3.x hooks into Zensical's internals and therefore requires
+# Zensical 0.0.x. The newest Zensical (0.1.1) has no multi-language support
+# yet, and it is out of the range zensical-i18n accepts — 0.0.74 is the
+# newest release the two work together on.
+zensical>=0.0.74,<0.1
+zensical-i18n>=0.3.0

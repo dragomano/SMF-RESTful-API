@@ -4,6 +4,7 @@
 ![PHP](https://img.shields.io/badge/PHP-^8.2-blue.svg?style=flat)
 ![License](https://img.shields.io/github/license/dragomano/smf-restful-api)
 ![Hooks only: Yes](https://img.shields.io/badge/Hooks%20only-YES-blue)
+[![Docs](https://img.shields.io/badge/Docs-Site-orange.svg)](https://dragomano.github.io/SMF-RESTful-API/)
 [![Coverage Status](https://coveralls.io/repos/github/dragomano/smf-restful-api/badge.svg?branch=main)](https://coveralls.io/github/dragomano/smf-restful-api?branch=main)
 
 **SMF RESTful API** is a modification for the [SMF 2.1](https://github.com/SimpleMachines/SMF2.1)
@@ -15,7 +16,7 @@ request to its own router. A resource is addressed as
 `index.php?action=api;path=v1/members/5`, or, with a rewrite rule in place, as
 `/api/v1/members/5`.
 
-[Full documentation](https://dragomano.github.io/smf-restful-api/) — getting started guide and API reference.
+[Full documentation](https://dragomano.github.io/SMF-RESTful-API/) — getting started guide and API reference.
 
 ## Requirements
 
@@ -52,14 +53,14 @@ single resource is returned as `{"data": {...}}`, a collection as
 `{"error": {"code": "...", "message": "..."}}`.
 
 The complete endpoint list, the writable fields of every resource and the error
-codes live in the [API reference](https://dragomano.github.io/smf-restful-api/guide/api-reference).
+codes live in the [API reference](https://dragomano.github.io/SMF-RESTful-API/guide/api-reference).
 
 ## Extending
 
 Third-party mods extend the API through the integration hooks the mod itself
 fires — `integrate_api_routes`, `integrate_api_pre_dispatch`,
 `integrate_api_authenticate` and `integrate_api_pre_send` — without patching
-this mod's files. See the [extending guide](https://dragomano.github.io/smf-restful-api/guide/extending/overview).
+this mod's files. See the [extending guide](https://dragomano.github.io/SMF-RESTful-API/guide/extending/overview).
 
 A ready-made collection of requests is available in `postman_collection.json`.
 
@@ -69,15 +70,6 @@ A ready-made collection of requests is available in `postman_collection.json`.
 composer install
 composer test        # test suite
 composer check       # Rector dry run
-```
-
-The documentation lives in `docs/` and is built with
-[CarvePress](https://github.com/markup-carve/carve):
-
-```bash
-cd docs
-npm ci
-npm run docs:build
 ```
 
 ## License

@@ -1,15 +1,19 @@
 ---
-title: Custom Authentication
 description: How to plug in your own authentication via integrate_api_authenticate — e.g. OAuth/JWT — by setting $idMember.
-order: 4
 ---
 
-# Custom Authentication Schemes
+# Custom Authentication Schemes { #custom-authentication-schemes }
 
 Register an `integrate_api_authenticate` handler to add your own scheme. If `$idMember` stays `null`, the native key check applies. A set `$idMember` still goes through the account activation check and receives the full SMF permission context.
 
-```php "authenticate"
-public function authenticate(\SMF\API\Request $request, ?int &$idMember): void
+```php title="authenticate"
+<?php declare(strict_types=1);
+
+use SMF\API\Request;
+
+// ...
+
+public function authenticate(Request $request, ?int &$idMember): void
 {
 	$token = $request->header('x-my-oauth');
 
@@ -21,24 +25,25 @@ public function authenticate(\SMF\API\Request $request, ?int &$idMember): void
 
 The handler runs on every request, so keep it fast. It may also reject the request itself: throw an `ApiException` and the answer is a JSON error instead of the usual `401`.
 
-## Where this fits in the request lifecycle
+## Where this fits in the request lifecycle { #where-this-fits-in-the-request-lifecycle }
 
 1. Request is parsed (`Request`).
 2. `integrate_api_pre_dispatch` hooks run (throttling, CORS preflight).
 3. Authentication runs: first all `integrate_api_authenticate` handlers, then the native API-key check if `$idMember` is still `null`.
 4. Router dispatches to the controller.
 
-## Native API-key sources (when no custom id is set)
+## Native API-key sources (when no custom id is set) { #native-api-key-sources-when-no-custom-id-is-set }
 
 The built-in authenticator accepts the key from `Authorization: Bearer <key>`, the `X-API-Key` header, or the `api_key` request parameter — in that order of preference. After authentication the full SMF user context is restored (`$user_info`, `allowedTo()`, `{query_see_board}`).
 
 The key is matched against the map stored in the mod settings, where each token points to a member id. A missing key, an unknown key and a key whose member no longer exists or is not fully activated (`is_activated = 1`) all answer `401` with the error code `unauthorized`.
 
-::: note "Keys belong to members, not to permissions"
-A key carries no rights of its own: the request acts with the permissions of the member it is bound to. Give a client the key of a member whose group grants exactly the rights that client needs.
-:::
+!!! note "Keys belong to members, not to permissions"
 
-## Tips
+    A key carries no rights of its own: the request acts with the permissions of the member it is bound to. Give a client the key of a member whose group grants exactly the rights that client needs.
+
+
+## Tips { #tips }
 
 - Resolve the token to an integer member id only when you can validate it; leave `$idMember` as `null` to fall through.
 - Do not set an id for an inactive or banned account — the core check will still reject it.

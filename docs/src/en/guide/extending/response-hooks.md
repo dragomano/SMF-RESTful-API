@@ -1,16 +1,16 @@
 ---
-title: Response & Request Hooks
 description: Adjusting responses via integrate_api_pre_send (CORS, wrappers, rate-limit headers) and intercepting requests via integrate_api_pre_dispatch with ApiException.
-order: 5
 ---
 
-# Adjusting the Response & Request
+# Adjusting the Response & Request { #adjusting-the-response-request }
 
-## Adjusting the response (for example, CORS)
+## Adjusting the response (for example, CORS) { #adjusting-the-response-for-example-cors }
 
 Use `integrate_api_pre_send`. It fires before the response is sent and lets you adjust the body, status, and headers — for CORS, rate-limit headers, or envelope wrappers.
 
-```php "preSend"
+```php title="preSend"
+<?php declare(strict_types=1);
+
 public function preSend(mixed &$payload, int &$status, array &$headers): void
 {
 	$headers['Access-Control-Allow-Origin'] = '*';
@@ -25,19 +25,27 @@ Parameters are passed by reference:
 
 The hook also fires for error answers, so a wrapper can be applied to failures as well.
 
-::: tip "Browser clients and preflight"
-The API answers only `GET`, `POST`, `PUT`, `PATCH` and `DELETE`; a CORS preflight (`OPTIONS`) has to be handled by your own hook — for example in `integrate_api_pre_dispatch`, answer it there with the `Access-Control-Allow-*` headers.
-:::
+!!! tip "Browser clients and preflight"
 
-## Adjusting the request before routing
+    The API answers only `GET`, `POST`, `PUT`, `PATCH` and `DELETE`; a CORS preflight (`OPTIONS`) has to be handled by your own hook — for example in `integrate_api_pre_dispatch`, answer it there with the `Access-Control-Allow-*` headers.
+
+
+## Adjusting the request before routing { #adjusting-the-request-before-routing }
 
 Use `integrate_api_pre_dispatch`. It fires after the request is parsed but before authentication — good for global logic like throttling or CORS preflight. Throw an `ApiException` to abort the request with a JSON error.
 
-```php "preDispatch"
-public function preDispatch(\SMF\API\Request $request): void
+```php title="preDispatch"
+<?php declare(strict_types=1);
+
+use SMF\API\ApiException;
+use SMF\API\Request;
+
+// ...
+
+public function preDispatch(Request $request): void
 {
 	if (my_rate_limit_exceeded($request)) {
-		throw new \SMF\API\ApiException(429, 'Too many requests', 'too_many_requests');
+		throw new ApiException(429, 'Too many requests', 'too_many_requests');
 	}
 }
 ```

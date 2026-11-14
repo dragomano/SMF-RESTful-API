@@ -1,18 +1,14 @@
 ---
-title: Чистые URL
 description: Опциональные правила перезаписи для коротких URL /api/* на Apache и Nginx; прямой адрес index.php?action=api;path=... работает всегда.
-order: 2
 ---
 
-{#Clean-URLs-rewrite-rules}
-# Чистые URL (правила перезаписи)
+# Чистые URL (правила перезаписи) { #clean-urls-rewrite-rules }
 
 Правила перезаписи не обязательны: API всегда доступен по «прямому» адресу `index.php?action=api;path=v1/members/5`. Правила лишь превращают его в короткий `/api/v1/members/5`. Ведущий сегмент `api` мод снимает сам, поэтому запрос уходит в `index.php?action=api` с путём в параметре `path`; остальные query-параметры (например, `?limit=25&offset=50`) при этом сохраняются.
 
-{#Apache-htaccess-in-the-forum-root}
-## Apache (.htaccess в корне форума)
+## Apache (.htaccess в корне форума) { #apache-htaccess-in-the-forum-root }
 
-```apache ".htaccess"
+```apache title=".htaccess"
 RewriteEngine On
 # /api/v1/members/5  ->  index.php?action=api;path=v1/members/5
 RewriteRule ^api/(.*)$ index.php?action=api;path=$1 [QSA,L]
@@ -20,10 +16,9 @@ RewriteRule ^api/(.*)$ index.php?action=api;path=$1 [QSA,L]
 
 Флаг `QSA` дописывает исходную строку запроса, поэтому фильтры и пагинация продолжают работать. Если форум установлен в подкаталоге, добавьте перед правилом `RewriteBase` — например, `RewriteBase /forum/`.
 
-{#Nginx}
-## Nginx
+## Nginx { #nginx }
 
-```nginx "nginx.conf"
+```nginx title="nginx.conf"
 # /api/v1/members/5  ->  index.php?action=api;path=v1/members/5
 location ^~ /api/ {
     rewrite ^/api/(.*)$ /index.php?action=api;path=$1 last;
@@ -32,12 +27,14 @@ location ^~ /api/ {
 
 Модификатор `^~` даёт этому блоку приоритет над общим `location ~ \.php$` (порядок описания при этом не важен), а сам `/index.php` затем обрабатывается штатным PHP-location форума. Nginx автоматически дописывает исходные query-параметры к цели `rewrite`.
 
-::: tip "Прямой адрес работает всегда"
-Правила перезаписи можно не настраивать и использовать `index.php?action=api;path=v1/members/5` (или `index.php?action=api&path=v1/members/5` в зависимости от стиля разделителя).
-:::
+!!! tip "Прямой адрес работает всегда"
 
-::: warning "Заголовок Authorization должен дойти до PHP"
-Некоторые серверные конфигурации срезают заголовок `Authorization` до того, как он дойдёт до PHP — так делает Apache с CGI, то же происходит за прокси. Мод читает срезанный заголовок и из `REDIRECT_HTTP_AUTHORIZATION`, поэтому обычно всё работает из коробки. Если аутентификация не проходит с верным ключом, пробросьте заголовок явно (для Apache: `CGIPassAuth On` или `SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1`).
-:::
+    Правила перезаписи можно не настраивать и использовать `index.php?action=api;path=v1/members/5` (или `index.php?action=api&path=v1/members/5` в зависимости от стиля разделителя).
+
+
+!!! warning "Заголовок Authorization должен дойти до PHP"
+
+    Некоторые серверные конфигурации срезают заголовок `Authorization` до того, как он дойдёт до PHP — так делает Apache с CGI, то же происходит за прокси. Мод читает срезанный заголовок и из `REDIRECT_HTTP_AUTHORIZATION`, поэтому обычно всё работает из коробки. Если аутентификация не проходит с верным ключом, пробросьте заголовок явно (для Apache: `CGIPassAuth On` или `SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1`).
+
 
 Путь также читается из `PATH_INFO`, если параметр `path` отсутствует, поэтому сработает и правило перезаписи, которое только меняет URL, не передавая путь параметром.

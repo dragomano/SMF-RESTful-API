@@ -1,17 +1,15 @@
 ---
-title: Adding a Resource
 description: Step-by-step guide to adding a custom widgets resource — mod entry point, route registration, controller, and reserved parameter pitfalls.
-order: 2
 ---
 
-# Adding a New Resource
+# Adding a New Resource { #adding-a-new-resource }
 
 Below is a minimal mod that adds a `widgets` resource.
 
-## 1. Mod entry point
+## 1. Mod entry point { #s-1-mod-entry-point }
 
-```php "Integration.php"
-<?php
+```php title="Integration.php"
+<?php declare(strict_types=1);
 
 namespace Vendor\Widgets;
 
@@ -23,8 +21,8 @@ class Integration
 	public function hooks(): void
 	{
 		// Your own autoloader, so SMF can find the mod's classes.
-		add_integration_function('integrate_autoload', self::class . '::autoload#', false, __FILE__);
-		add_integration_function('integrate_api_routes', self::class . '::routes#', false, __FILE__);
+		add_integration_function('integrate_autoload', self::class . '::autoload#', false);
+		add_integration_function('integrate_api_routes', self::class . '::routes#', false);
 	}
 
 	public function autoload(array &$classMap): void
@@ -36,12 +34,18 @@ class Integration
 }
 ```
 
-## 2. Registering routes
+## 2. Registering routes { #s-2-registering-routes }
 
 The `integrate_api_routes` handler receives a `Router` object with the fluent methods `get()`, `post()`, `put()`, `patch()`, `delete()`. The `{id}` segment (or any `{name}`) is placed into the action's parameter array.
 
-```php "routes"
-public function routes(\SMF\API\Router $router): void
+```php title="routes"
+<?php declare(strict_types=1);
+
+use SMF\API\Router;
+
+// ...
+
+public function routes(Router $router): void
 {
 	$router->get('widgets', WidgetController::class, 'index');
 	$router->get('widgets/{id}', WidgetController::class, 'show');
@@ -51,20 +55,22 @@ public function routes(\SMF\API\Router $router): void
 
 The path parameters arrive as strings; validate them with `$this->id($params)` before using them in a query. Besides the verb helpers, `Router::add($method, $pattern, $class, $action)` registers a route for any other verb.
 
-::: note "Version prefix"
-Routes are registered *without* a version prefix. The leading version segment (`v1`) is stripped and validated by the `Router` itself, so the patterns stay version-agnostic. The client addresses the resource as `index.php?action=api&path=v1/widgets`.
-:::
+!!! note "Version prefix"
 
-::: warning "Nested collections and reserved parameters"
-Register "child" lists under the parent — `parent/{parent_id}/children`, not through a query filter. Examples from the core API: `GET boards/{board_id}/topics`, `GET categories/{cat_id}/boards`, `GET topics/{topic_id}/posts`. The reason is not just style: the names `board`, `topic`, `msg`, `start`, `action` are *SMF's reserved query parameters*. If you pass `?board=5`, the core will treat the request as a board view during `loadBoard()` and return an HTML page — it will never reach `action=api`. The parent identifier in the path (`{parent_id}`) avoids this collision; read it with `$this->id($params, 'parent_id')`.
-:::
+    Routes are registered *without* a version prefix. The leading version segment (`v1`) is stripped and validated by the `Router` itself, so the patterns stay version-agnostic. The client addresses the resource as `index.php?action=api&path=v1/widgets`.
 
-## 3. Controller
+
+!!! warning "Nested collections and reserved parameters"
+
+    Register "child" lists under the parent — `parent/{parent_id}/children`, not through a query filter. Examples from the core API: `GET boards/{board_id}/topics`, `GET categories/{cat_id}/boards`, `GET topics/{topic_id}/posts`. The reason is not just style: the names `board`, `topic`, `msg`, `start`, `action` are *SMF's reserved query parameters*. If you pass `?board=5`, the core will treat the request as a board view during `loadBoard()` and return an HTML page — it will never reach `action=api`. The parent identifier in the path (`{parent_id}`) avoids this collision; read it with `$this->id($params, 'parent_id')`.
+
+
+## 3. Controller { #s-3-controller }
 
 The controller extends `SMF\API\Controllers\AbstractController` and gets a ready-made "harness": access to the request, a response factory, the `Query` builder, pagination, and id validation.
 
-```php "WidgetController.php"
-<?php
+```php title="WidgetController.php"
+<?php declare(strict_types=1);
 
 namespace Vendor\Widgets;
 
@@ -87,18 +93,20 @@ class WidgetController extends AbstractController
 			->orderBy('w.name')
 			->params(['hidden' => 0]);
 
-		// Every row passes through transform(); a collection with pagination meta is returned.
+		// Every row passes through transform();
+		// a collection with pagination meta is returned.
 		return $this->paginate($query);
 	}
 
 	public function show(array $params): Response
 	{
+		// id($params) validates {id}
 		$row = $this->first(
 			(new Query())
 				->from('{db_prefix}widgets')
 				->where('id_widget = {int:id}')
 				->columns('id_widget, name')
-				->params(['id' => $this->id($params)]) // id($params) validates {id}
+				->params(['id' => $this->id($params)])
 		);
 
 		if ($row === null) {
@@ -118,8 +126,9 @@ class WidgetController extends AbstractController
 }
 ```
 
-See [Query & Controller](/guide/extending/query) for the full reference of `Query` and `AbstractController` helpers.
+See [Query & Controller](query.md) for the full reference of `Query` and `AbstractController` helpers.
 
-::: tip "What a controller action returns"
-An action should return a `Response` — `$this->response()->data(...)` for a single resource, `$this->paginate($query)` for a collection, `$this->noContent()` for an empty `204`. A plain array works too: the router wraps it into `data`. Anything you throw as an `ApiException` becomes a JSON error with the matching status code.
-:::
+!!! tip "What a controller action returns"
+
+    An action should return a `Response` — `$this->response()->data(...)` for a single resource, `$this->paginate($query)` for a collection, `$this->noContent()` for an empty `204`. A plain array works too: the router wraps it into `data`. Anything you throw as an `ApiException` becomes a JSON error with the matching status code.
+

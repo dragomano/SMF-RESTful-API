@@ -1,0 +1,9 @@
+# Build output
+site/
+
+# Build cache
+.cache/
+.zensical-i18n/
+
+# The virtual environment of the build
+.venv/

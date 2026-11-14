@@ -1,0 +1,150 @@
+# Zensical configuration for the SMF RESTful API documentation.
+#
+# The sources live in src/<locale>/…, so the default locale (en) is built to
+# the root of the site and the Russian locale to /ru/. The two locales are
+# built by zensical-i18n, which wraps Zensical: `zensical-i18n build`.
+
+[project]
+site_name = "SMF RESTful API"
+site_url = "https://dragomano.github.io/SMF-RESTful-API/"
+site_description = "RESTful JSON API for SMF 2.1 — routing, authentication, and extensibility via hooks."
+repo_url = "https://github.com/dragomano/SMF-RESTful-API"
+repo_name = "dragomano/SMF-RESTful-API"
+edit_uri = "edit/main/docs/src/"
+copyright = "Released under the MIT License."
+docs_dir = "src"
+site_dir = "site"
+dev_addr = "localhost:8000"
+extra_css = ["stylesheets/extra.css"]
+
+nav = [
+  { "Home" = "index.md" },
+  { "Guide" = [
+    { "Getting Started" = "guide/getting-started.md" },
+    { "Clean URLs" = "guide/clean-urls.md" },
+    { "API Reference" = "guide/api-reference.md" },
+  ]},
+  { "Extending" = [
+    { "Overview & Hooks" = "guide/extending/overview.md" },
+    { "Adding a Resource" = "guide/extending/adding-resource.md" },
+    { "Query & Controller" = "guide/extending/query.md" },
+    { "Authentication" = "guide/extending/authentication.md" },
+    { "Response Hooks" = "guide/extending/response-hooks.md" },
+  ]},
+]
+
+[project.theme]
+variant = "classic"
+language = "en"
+features = [
+  "content.action.edit",
+  "content.action.view",
+  "content.code.copy",
+  "content.tooltips",
+  "navigation.expand",
+  "navigation.footer",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+  "search.suggest",
+  "toc.follow",
+]
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+
+# Start with the system's preference; the toggle then switches between light
+# and dark.
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/dragomano/SMF-RESTful-API"
+
+# Setting any extension replaces Zensical's defaults, so every extension is
+# listed.
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.arithmatex.generic = true
+pymdownx.betterem = {}
+pymdownx.caret = {}
+pymdownx.details = {}
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = { repo_url_shorthand = true, user = "dragomano", repo = "smf-restful-api" }
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tabbed.combine_header_slug = true
+pymdownx.tasklist.custom_checkbox = true
+pymdownx.tilde = {}
+
+# For agents: an llms.txt index and a Markdown copy of every page.
+[project.plugins.llmstxt]
+markdown_description = "Documentation for SMF RESTful API — a RESTful JSON API for SMF 2.1."
+
+[project.plugins.llmstxt.sections]
+"Guide" = ["index.md", "guide/*.md", "guide/extending/*.md"]
+
+# The two locales of the site. Zensical itself has no multi-language support
+# yet, so zensical-i18n builds them one after another and merges the results.
+[project.plugins.i18n]
+docs_structure = "folder"
+fallback_to_default = true
+
+[[project.plugins.i18n.languages]]
+locale = "en"
+name = "English"
+default = true
+
+[[project.plugins.i18n.languages]]
+locale = "ru"
+name = "Русский"
+site_description = "RESTful JSON API для SMF 2.1 — маршрутизация, аутентификация и расширяемость через хуки."
+copyright = "Лицензия MIT."
+
+[project.plugins.i18n.languages.nav_translations]
+"Home" = "Главная"
+"Guide" = "Руководство"
+"Getting Started" = "Начало работы"
+"Clean URLs" = "Чистые URL"
+"API Reference" = "Справочник API"
+"Extending" = "Расширение"
+"Overview & Hooks" = "Обзор и хуки"
+"Adding a Resource" = "Добавление ресурса"
+"Query & Controller" = "Query и контроллер"
+"Authentication" = "Аутентификация"
+"Response Hooks" = "Хуки ответа"
