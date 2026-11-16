@@ -84,7 +84,7 @@ class TopicController extends AbstractController
 				INNER JOIN {db_prefix}messages AS ms ON (ms.id_msg = t.id_first_msg)')
 			->where(implode(' AND ', $where))
 			->columns('t.id_topic, t.id_board, t.id_first_msg, t.id_last_msg, t.num_replies, t.num_views,
-				t.locked, t.is_sticky, t.approved, ms.subject, ms.poster_time, ms.id_member AS starter_id,
+				t.locked, t.is_sticky, t.approved, ms.subject, ms.body, ms.poster_time, ms.id_member AS starter_id,
 				ms.poster_name AS starter_name')
 			->orderBy('t.id_last_msg DESC')
 			->params($queryParams);
@@ -103,9 +103,6 @@ class TopicController extends AbstractController
 		}
 
 		$topic = $this->transform($row);
-
-		$topic['body']     = parse_bbc($row['body'], true, 'api-' . $row['id_first_msg']);
-		$topic['body_raw'] = $row['body'];
 
 		return $this->response()->data($topic);
 	}
@@ -283,7 +280,7 @@ class TopicController extends AbstractController
 
 	protected function transform(array $row): array
 	{
-		return [
+		$topic = [
 			'id'      => (int) $row['id_topic'],
 			'board'   => (int) $row['id_board'],
 			'subject' => $row['subject'],
@@ -300,6 +297,16 @@ class TopicController extends AbstractController
 			'id_first_msg' => (int) $row['id_first_msg'],
 			'id_last_msg'  => (int) $row['id_last_msg'],
 		];
+
+		// Bodies travel with the row when the query asked for them (the list
+		// and show()); the parsed form drives read-only previews, the raw one
+		// is the BBC source for editors.
+		if (isset($row['body'])) {
+			$topic['body']     = parse_bbc($row['body'], true, 'api-' . $row['id_first_msg']);
+			$topic['body_raw'] = $row['body'];
+		}
+
+		return $topic;
 	}
 
 	/**
