@@ -80,7 +80,7 @@ class MemberController extends AbstractController
 		$query = (new Query())
 			->from('{db_prefix}members')
 			->where('is_activated = {int:active}')
-			->columns('id_member, member_name, real_name, posts, date_registered, id_group, id_post_group, last_login')
+			->columns('id_member, member_name, real_name, posts, date_registered, id_group, id_post_group, additional_groups, last_login')
 			->orderBy('id_member')
 			->params(['active' => 1]);
 
@@ -235,7 +235,7 @@ class MemberController extends AbstractController
 			'last_login'        => (int) $row['last_login'],
 			'primary_group'     => (int) $row['id_group'],
 			'post_group'        => (int) $row['id_post_group'],
-			'additional_groups' => $row['additional_groups'],
+			'additional_groups' => array_map(intval(...), array_filter(explode(',', (string) ($row['additional_groups'] ?? '')))),
 		];
 
 		// The private half of the profile is only ever exposed to administrators.

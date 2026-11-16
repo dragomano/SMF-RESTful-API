@@ -58,7 +58,7 @@ final class MemberControllerTest
         'last_login'        => 2000,
         'primary_group'     => 2,
         'post_group'        => 4,
-        'additional_groups' => '3,7',
+        'additional_groups' => [3, 7],
     ];
 
     // The administrator shape adds the private half of the profile.
