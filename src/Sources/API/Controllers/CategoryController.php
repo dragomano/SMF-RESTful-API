@@ -38,18 +38,22 @@ class CategoryController extends AbstractController
 
 	public function index(array $params): Response
 	{
-		// Only categories that hold at least one board the member may see.
 		$query = (new Query())
 			->from('{db_prefix}categories AS c')
-			->where('
+			->columns('c.id_cat, c.name, c.description, c.cat_order, c.can_collapse')
+			->orderBy('c.cat_order');
+
+		// Members who manage boards get every category, an empty one included;
+		// the rest only see categories holding at least one board they may see.
+		if (! allowedTo('manage_boards')) {
+			$query->where('
 				EXISTS (
 					SELECT 1
 					FROM {db_prefix}boards AS b
 					WHERE b.id_cat = c.id_cat
 						AND {query_see_board}
-				)')
-			->columns('c.id_cat, c.name, c.description, c.cat_order, c.can_collapse')
-			->orderBy('c.cat_order');
+				)');
+		}
 
 		return $this->paginate($query);
 	}

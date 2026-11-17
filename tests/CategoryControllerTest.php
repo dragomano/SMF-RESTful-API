@@ -34,6 +34,41 @@ final class CategoryControllerTest
             ['id' => 1, 'name' => 'General', 'description' => 'Talk', 'order' => 0, 'can_collapse' => true],
         ]);
         Assert::same($payload['meta']['total'], 1);
+
+        // Without manage_boards the list keeps its visibility filter: at least
+        // one of the recorded queries (COUNT, SELECT) must carry the EXISTS.
+        Assert::same(
+            (bool) array_filter(
+                $GLOBALS['api_queries'],
+                static fn (array $recorded): bool => str_contains($recorded['query'], 'EXISTS')
+            ),
+            true
+        );
+    }
+
+    public function indexListsEveryCategoryForAMemberWhoManagesBoards(): void
+    {
+        Environment::reset();
+
+        $GLOBALS['api_permissions'] = ['manage_boards'];
+        $GLOBALS['api_total']       = 2;
+
+        // An empty category (no boards) sits next to a filled one; both are
+        // listed because the visibility filter is dropped for board managers.
+        $GLOBALS['api_rows'] = [
+            ['id_cat' => '4', 'name' => 'Testing Zone', 'description' => 'New', 'cat_order' => '0', 'can_collapse' => '1'],
+            ['id_cat' => '1', 'name' => 'General', 'description' => 'Talk', 'cat_order' => '3', 'can_collapse' => '1'],
+        ];
+
+        $response = (new CategoryController(Environment::request()))->index([]);
+        $payload  = Environment::readResponse($response)['payload'];
+
+        Assert::same($payload['meta']['total'], 2);
+        Assert::same($payload['data'][0]['name'], 'Testing Zone');
+
+        foreach ($GLOBALS['api_queries'] as $recorded) {
+            Assert::same(str_contains($recorded['query'], 'EXISTS'), false);
+        }
     }
 
     public function showReturnsAcategoryWithItsVisibleBoards(): void

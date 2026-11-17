@@ -154,7 +154,7 @@ Every response is sent as `Content-Type: application/json; charset=utf-8` with `
 
 | Method | Path | Permission / notes |
 | --- | --- | --- |
-| `GET` | `categories` | Lists the categories that hold at least one board the member may see |
+| `GET` | `categories` | Lists the categories — all of them for members who manage boards (empty included), otherwise only those holding at least one board the member may see |
 | `GET` | `categories/{id}` | One category; the payload also carries its visible boards in `boards` |
 | `GET` | `categories/{cat_id}/boards` | The boards of one category |
 | `POST` | `categories` | `manage_boards`; `name` is required; answers `201` |
