@@ -1,0 +1,325 @@
+# MoonShine V (https://github.com/moonshine-software/v) + SMF forum
+# (https://github.com/SimpleMachines/SMF2.1) with the RESTful API mod
+# (https://github.com/dragomano/smf-restful-api).
+#
+# The SMF side follows the Light-Portal _docker example:
+# the forum is pre-installed via a database seed dump (dockerfiles/dump.sql).
+
+x-msv-build: &msv-build
+  context: .
+  dockerfile: dockerfiles/moonshine-v/Dockerfile
+  args:
+    MSV_VERSION: ${MSV_VERSION:-v1.0.0}
+
+# Environment shared by every MoonShine V service (based on the project's own
+# docker/compose.production.yml). APP_KEY is generated once by moonshine-init
+# into the app_state volume, so it is deliberately NOT set here.
+x-msv-env: &msv-env
+  APP_ENV: ${APP_ENV:-local}
+  APP_DEBUG: ${APP_DEBUG:-true}
+  APP_URL: ${MSV_APP_URL:-https://localhost:8080}
+  LOG_CHANNEL: stderr
+  API_ADMIN_LOG_LEVEL: ${API_ADMIN_LOG_LEVEL:-info}
+  API_ADMIN_ALLOW_PRIVATE_UPSTREAM: ${API_ADMIN_ALLOW_PRIVATE_UPSTREAM:-true}
+  DB_CONNECTION: pgsql
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_DATABASE: ${MSV_DB_DATABASE:-moonshine_v}
+  DB_USERNAME: ${MSV_DB_USERNAME:-moonshine_v}
+  DB_PASSWORD: ${MSV_DB_PASSWORD:-moonshine_v}
+  CACHE_STORE: redis
+  SESSION_DRIVER: redis
+  QUEUE_CONNECTION: redis
+  REDIS_CLIENT: phpredis
+  REDIS_HOST: redis
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-null}
+  REDIS_PORT: 6379
+  # MoonShine V reads the upstream API key for a generated service named
+  # "smf-forum" from SMF_FORUM_API_KEY at runtime (the generated config file
+  # only holds an empty stub).
+  SMF_FORUM_API_KEY: ${SMF_API_KEY:-}
+  MSV_ADMIN_NAME: ${MSV_ADMIN_NAME:-Administrator}
+  MSV_ADMIN_EMAIL: ${MSV_ADMIN_EMAIL:-admin@localhost}
+  MSV_ADMIN_PASSWORD: ${MSV_ADMIN_PASSWORD:-change-me}
+
+services:
+
+  # ---------------------------------------------------------------- SMF forum
+  # The seed dump is rendered from the template at container start (no custom
+  # image build, so no secret-bearing ARG): bind-mount the template and the
+  # render script, then exec the stock MariaDB entrypoint, which imports
+  # /docker-entrypoint-initdb.d/* while creating the data volume.
+  db:
+    image: mariadb:12
+    command: ["sh", "-c", "sh /usr/local/bin/render-smf-dump.sh /tmp/smf-dump.sql /docker-entrypoint-initdb.d/dump.sql && exec docker-entrypoint.sh mariadbd"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      SMF_VERSION: ${SMF_VERSION:?Set SMF_VERSION in .env (copy .env.example first)}
+      FORUM_URL: ${FORUM_URL:?Set FORUM_URL in .env (copy .env.example first)}
+      SMF_API_KEY: ${SMF_API_KEY:?Set SMF_API_KEY in .env (copy .env.example first)}
+    volumes:
+      - ./dockerfiles/dump.sql:/tmp/smf-dump.sql:ro
+      - ./dockerfiles/mariadb/render-smf-dump.sh:/usr/local/bin/render-smf-dump.sh:ro
+      - data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/3306' || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  php:
+    build:
+      context: .
+      dockerfile: dockerfiles/php/Dockerfile
+      args:
+        PHP_VERSION: ${PHP_VERSION:?Set PHP_VERSION in .env (copy .env.example first)}
+        SMF_VERSION: ${SMF_VERSION:?Set SMF_VERSION in .env (copy .env.example first)}
+    command: sh -c "sleep 2 && php-fpm"
+    volumes:
+      - web:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DB_HOST=${DB_HOST}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_PREFIX=${DB_PREFIX}
+      - FORUM_URL=${FORUM_URL}
+      - FORUM_NAME=${FORUM_NAME}
+      - FORUM_LANG=${FORUM_LANG}
+      - FORUM_LOGIN=${FORUM_LOGIN}
+      - FORUM_PASS=${FORUM_PASS}
+      - FORUM_EMAIL=${FORUM_EMAIL}
+
+  nginx:
+    build:
+      context: .
+      dockerfile: dockerfiles/nginx/Dockerfile
+    environment:
+      - NGINX_HTTPS_PORT=${NGINX_HTTPS_PORT:-8443}
+    ports:
+      - "${NGINX_HTTP_PORT:-8085}:80"
+      - "${NGINX_HTTPS_PORT:-8443}:443"
+    volumes:
+      - web:/var/www/html
+    depends_on:
+      php:
+        condition: service_started
+
+  adminer:
+    image: adminer
+    restart: always
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+      ADMINER_DESIGN: lucas-sandery
+    ports:
+      - ${ADMINER_PORT:-8082}:8080
+    depends_on:
+      - db
+
+  # Helper, not part of `up`: packs the RESTful API mod archive from this
+  # repository's src/ into dockerfiles/downloads/smf_restful_api.zip, which
+  # the php image build unpacks into the forum. Run explicitly:
+  #   docker compose run --rm mod-build
+  mod-build:
+    image: php:8.2-cli
+    profiles:
+      - tools
+    working_dir: /build
+    volumes:
+      - ../../src:/build/src:ro
+      - ./dockerfiles/php/build-mod-package.php:/build/build-mod-package.php:ro
+      - ./dockerfiles/downloads:/build/downloads
+    command: sh -c "apt-get update -qq \
+      && apt-get install -y -qq --no-install-recommends libzip-dev >/dev/null \
+      && docker-php-ext-install zip >/dev/null \
+      && php build-mod-package.php src downloads/smf_restful_api.zip"
+
+  # ------------------------------------------------------------- MoonShine V
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${MSV_DB_DATABASE:-moonshine_v}
+      POSTGRES_USER: ${MSV_DB_USERNAME:-moonshine_v}
+      POSTGRES_PASSWORD: ${MSV_DB_PASSWORD:-moonshine_v}
+      PGDATA: /var/lib/postgresql/18/docker
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.6-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # First boot: prepare the runtime storage volume and generate APP_KEY.
+  moonshine-init:
+    build:
+      <<: *msv-build
+      target: production
+    user: root
+    command: ["sh", "docker/init-runtime.sh"]
+    volumes:
+      - app_state:/var/www/html/storage
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=82,gid=82
+      - /var/www/html/bootstrap/cache:rw,noexec,nosuid,size=16m,uid=82,gid=82
+    restart: "no"
+
+  # Runs migrations and seeds the panel administrator, then exits.
+  moonshine-migrate:
+    build:
+      <<: *msv-build
+      target: production
+    command: sh -c "php artisan migrate --force && php docker/seed-admin.php"
+    depends_on:
+      moonshine-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment: *msv-env
+    volumes:
+      - app_state:/var/www/html/storage
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=82,gid=82
+      - /var/www/html/bootstrap/cache:rw,noexec,nosuid,size=16m,uid=82,gid=82
+    restart: "no"
+
+  # Registers the smf_forum service and generates the panel resources from
+  # the forum API, then exits. Idempotent: an existing service is upserted
+  # (the API key itself stays in SMF_FORUM_API_KEY), existing resources are
+  # skipped. When the forum API never answers, the seed exits 0 and leaves
+  # the panel empty — the "Add service" wizard remains the manual fallback.
+  moonshine-seed:
+    build:
+      <<: *msv-build
+      target: production
+    command: ["sh", "-c", "php artisan tinker --execute='require \"docker/gen-smf-resources.php\";' && php artisan optimize:clear"]
+    depends_on:
+      moonshine-migrate:
+        condition: service_completed_successfully
+      nginx:
+        condition: service_started
+    environment: *msv-env
+    volumes:
+      - app_state:/var/www/html/storage
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=82,gid=82
+      - /var/www/html/bootstrap/cache:rw,noexec,nosuid,size=16m,uid=82,gid=82
+    restart: "no"
+
+  api-admin-fpm:
+    build:
+      <<: *msv-build
+      target: production
+    depends_on:
+      moonshine-migrate:
+        condition: service_completed_successfully
+      moonshine-seed:
+        condition: service_completed_successfully
+    environment: *msv-env
+    expose:
+      - "9000"
+    volumes:
+      - app_state:/var/www/html/storage
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=82,gid=82
+      - /var/www/html/bootstrap/cache:rw,noexec,nosuid,size=16m,uid=82,gid=82
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "docker/healthcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  moonshine-queue:
+    build:
+      <<: *msv-build
+      target: production
+    command: [php, artisan, queue:work, --sleep=3, --tries=3, --timeout=60, --max-time=3600]
+    # The image healthcheck probes php-fpm on :9000, which this worker does not
+    # run — inheriting it would leave the container permanently "unhealthy".
+    healthcheck:
+      disable: true
+    depends_on:
+      api-admin-fpm:
+        condition: service_healthy
+    environment: *msv-env
+    volumes:
+      - app_state:/var/www/html/storage
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=82,gid=82
+      - /var/www/html/bootstrap/cache:rw,noexec,nosuid,size=16m,uid=82,gid=82
+    restart: unless-stopped
+
+  moonshine-scheduler:
+    build:
+      <<: *msv-build
+      target: production
+    command: [php, artisan, schedule:work]
+    # Same as the queue worker: no php-fpm here, so no HTTP healthcheck.
+    healthcheck:
+      disable: true
+    depends_on:
+      api-admin-fpm:
+        condition: service_healthy
+    environment: *msv-env
+    volumes:
+      - app_state:/var/www/html/storage
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=82,gid=82
+      - /var/www/html/bootstrap/cache:rw,noexec,nosuid,size=16m,uid=82,gid=82
+    restart: unless-stopped
+
+  moonshine-web:
+    build:
+      <<: *msv-build
+      target: web-local
+    ports:
+      - "${MSV_APP_PORT:-8080}:8080"
+    volumes:
+      - type: volume
+        source: app_state
+        target: /var/www/html/public/storage
+        read_only: true
+        volume:
+          subpath: app/public
+          nocopy: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=82,gid=82
+    depends_on:
+      api-admin-fpm:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--no-check-certificate", "-O", "/dev/null", "https://127.0.0.1:8080/ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  data:
+  web:
+  postgres_data:
+  redis_data:
+  app_state:

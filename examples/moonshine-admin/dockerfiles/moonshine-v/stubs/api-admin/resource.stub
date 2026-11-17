@@ -1,0 +1,272 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+use {{ namespace }}\Pages\{{ resourceBaseName }}DetailPage;
+use {{ namespace }}\Pages\{{ resourceBaseName }}FormPage;
+use {{ namespace }}\Pages\{{ resourceBaseName }}IndexPage;
+use App\ApiAdmin\Providers\ApiAdminServiceProvider;
+use App\ApiAdmin\Resources\MultiPanelRestResource;
+use App\ApiAdmin\ServiceConfig\ServiceConfig;
+{{ iconUse }}
+{{ iconAttribute }}
+class {{ className }} extends MultiPanelRestResource
+{
+    protected string $panel = '{{ panel }}';
+
+    protected string $title = '{{ title }}';
+{{ groupMethod }}
+    protected function resolveServiceConfig(): ServiceConfig
+    {
+        return ApiAdminServiceProvider::resolveService('{{ serviceName }}');
+    }
+
+    protected function endpoint(): string
+    {
+        return '{{ endpoint }}';
+    }
+
+    protected function pages(): array
+    {
+        return [
+            {{ resourceBaseName }}IndexPage::class,
+            {{ resourceBaseName }}FormPage::class,
+            {{ resourceBaseName }}DetailPage::class,
+        ];
+    }
+
+    protected function search(): array
+    {
+        return [{{ searchFields }}];
+    }
+{{ actionsMethod }}
+{{ mutationsProperty }}
+{{ defaultQueryProperty }}
+{{ indexRequestProperty }}
+{{ detailStrategyOverrideMethod }}
+{{ responseMappingProperty }}
+
+    public function isSmfForumResource(): bool
+    {
+        return '{{ serviceName }}' === 'smf_forum';
+    }
+
+    #[\Override]
+    public function getTitle(): string
+    {
+        if (! $this->isSmfForumResource()) {
+            return parent::getTitle();
+        }
+
+        $key = match ($this->endpoint()) {
+            '/members' => 'members',
+            '/categories' => 'categories',
+            '/boards' => 'boards',
+            '/topics' => 'topics',
+            '/groups' => 'groups',
+            default => null,
+        };
+
+        return $key === null ? parent::getTitle() : __('smf_forum.resources.' . $key);
+    }
+
+    #[\Override]
+    public function applyFields(array $data, \MoonShine\Contracts\Core\DependencyInjection\FieldsContract $fields): array
+    {
+        $data = parent::applyFields($data, $fields);
+
+        if ('{{ serviceName }}' === 'smf_forum' && $this->endpoint() === '/topics') {
+            if (array_key_exists('is_sticky', $data)) {
+                $data['sticky'] = $data['is_sticky'];
+            }
+
+            if (array_key_exists('body_raw', $data)) {
+                $data['body'] = $data['body_raw'];
+                unset($data['body_raw']);
+            }
+        }
+
+        if ('{{ serviceName }}' === 'smf_forum' && in_array($this->endpoint(), ['/categories', '/boards'], true)) {
+            unset($data['order']);
+        }
+
+        return $data;
+    }
+
+    /**
+     * Read a small lookup endpoint as an id => label map for SMF relations.
+     *
+     * @return array<int, string>
+     */
+    public function lookupOptions(string $endpoint): array
+    {
+        if (! $this->isSmfForumResource()) {
+            return [];
+        }
+
+        static $cache = [];
+
+        if (array_key_exists($endpoint, $cache)) {
+            return $cache[$endpoint];
+        }
+
+        try {
+            $rows = $this->httpClient()->get($endpoint, ['limit' => 100])->throw()->json('data');
+        } catch (\Throwable) {
+            return $cache[$endpoint] = [];
+        }
+
+        $options = [];
+
+        foreach (is_array($rows) ? $rows : [] as $row) {
+            if (is_array($row) && isset($row['id'])) {
+                $options[(int) $row['id']] = (string) ($row['name'] ?? $row['id']);
+            }
+        }
+
+        return $cache[$endpoint] = $options;
+    }
+
+    /** @return array<int, string> */
+    public function groupOptions(): array
+    {
+        return [0 => __('smf_forum.no_group')] + $this->lookupOptions('/groups');
+    }
+
+    /** @return array<int, string> */
+    public function categoryOptions(): array
+    {
+        return $this->lookupOptions('/categories');
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function boardOptions(?int $exceptId = null): array
+    {
+        $options = $this->lookupOptions('/boards');
+
+        return $exceptId === null ? $options : array_diff_key($options, [$exceptId => true]);
+    }
+
+    /**
+     * Full lookup rows for an endpoint (id plus extra columns), cached per
+     * request the same way lookupOptions() is.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function lookupRows(string $endpoint): array
+    {
+        if (! $this->isSmfForumResource()) {
+            return [];
+        }
+
+        static $cache = [];
+
+        if (array_key_exists($endpoint, $cache)) {
+            return $cache[$endpoint];
+        }
+
+        try {
+            $rows = $this->httpClient()->get($endpoint, ['limit' => 100])->throw()->json('data');
+        } catch (\Throwable) {
+            return $cache[$endpoint] = [];
+        }
+
+        return $cache[$endpoint] = array_values(array_filter(
+            is_array($rows) ? $rows : [],
+            static fn (mixed $row): bool => is_array($row),
+        ));
+    }
+
+    /**
+     * Boards of one category (id => label): SMF requires a parent board to
+     * belong to the same category as the board itself, so the parent select
+     * must be scoped by the picked category.
+     *
+     * @return array<int, string>
+     */
+    public function boardOptionsByCategory(int $categoryId, ?int $exceptId = null): array
+    {
+        $options = [];
+
+        foreach ($this->lookupRows('/boards') as $row) {
+            if ((int) ($row['category'] ?? 0) !== $categoryId) {
+                continue;
+            }
+
+            $options[(int) $row['id']] = (string) ($row['name'] ?? $row['id']);
+        }
+
+        return $exceptId === null ? $options : array_diff_key($options, [$exceptId => true]);
+    }
+
+    public function groupLink(int $id): string
+    {
+        if (! $this->isSmfForumResource()) {
+            return (string) $id;
+        }
+
+        $label = $this->groupOptions()[$id] ?? null;
+
+        return $label === null ? (string) $id : $this->resourceLink(\App\MoonShine\ApiAdmin\Resources\SmfForum\Group\GroupResource::class, $id, $label);
+    }
+
+    public function categoryLink(int $id): string
+    {
+        if (! $this->isSmfForumResource()) {
+            return (string) $id;
+        }
+
+        $label = $this->categoryOptions()[$id] ?? null;
+
+        return $label === null ? (string) $id : $this->resourceLink(\App\MoonShine\ApiAdmin\Resources\SmfForum\Category\CategoryResource::class, $id, $label);
+    }
+
+    public function boardLink(int $id): string
+    {
+        if (! $this->isSmfForumResource()) {
+            return (string) $id;
+        }
+
+        if ($id === 0) {
+            return __('smf_forum.no_parent');
+        }
+
+        $label = $this->boardOptions()[$id] ?? null;
+
+        return $label === null ? (string) $id : $this->resourceLink(\App\MoonShine\ApiAdmin\Resources\SmfForum\Board\BoardResource::class, $id, $label);
+    }
+
+    public function selfLink(int $id, string $label): string
+    {
+        if (! $this->isSmfForumResource()) {
+            return $label;
+        }
+
+        return $this->resourceLink(static::class, $id, $label);
+    }
+
+    /**
+     * @param class-string $resourceClass
+     */
+    private function resourceLink(string $resourceClass, int $id, string $label): string
+    {
+        if ($id <= 0) {
+            return $label;
+        }
+
+        try {
+            $resource = app($resourceClass);
+
+            return (string) \MoonShine\UI\Components\Link::make(
+                href: $resource->getDetailPageUrl($id),
+                label: $label,
+            );
+        } catch (\Throwable) {
+            return $label;
+        }
+    }
+}

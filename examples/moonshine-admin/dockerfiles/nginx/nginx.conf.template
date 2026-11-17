@@ -1,0 +1,66 @@
+server {
+    listen 80;
+    server_name localhost;
+
+    return 301 https://$server_name:${NGINX_HTTPS_PORT}$request_uri;
+}
+
+# Internal plain-HTTP endpoint for the MoonShine V container to reach the
+# forum API without TLS (not published to the host; compose network only).
+server {
+    listen 8081;
+    server_name nginx;
+
+    client_max_body_size 100M;
+
+    root /var/www/html;
+    index index.php index.html;
+
+    # /api/v1/members/5 -> index.php?action=api;path=v1/members/5
+    location ^~ /api/ {
+        rewrite ^/api/(.*)$ "/index.php?action=api;path=$1" last;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location ~ \.php$ {
+        fastcgi_pass php:9000;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param HTTPS off;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name localhost;
+
+    ssl_certificate /etc/nginx/ssl/nginx.crt;
+    ssl_certificate_key /etc/nginx/ssl/nginx.key;
+
+    client_max_body_size 100M;
+
+    root /var/www/html;
+    index index.php index.html;
+
+    # /api/v1/members/5 -> index.php?action=api;path=v1/members/5
+    # (the rewrite target is quoted because a bare ";" would end the directive)
+    location ^~ /api/ {
+        rewrite ^/api/(.*)$ "/index.php?action=api;path=$1" last;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location ~ \.php$ {
+        fastcgi_pass php:9000;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param HTTPS on;
+    }
+}

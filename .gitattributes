@@ -9,3 +9,4 @@
 /composer.lock  export-ignore
 /rector.php     export-ignore
 /testo.php      export-ignore
+/examples       export-ignore

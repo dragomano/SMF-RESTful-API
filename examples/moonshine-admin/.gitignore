@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------------
+# What must stay out of the repository, and why.
+#
+# The stack boots from files in this directory, so most of it IS tracked:
+# compose files, Dockerfiles, the seed dump, the packaged mod and the panel
+# patches. Only local state, secrets and re-downloadable binaries are ignored.
+# ---------------------------------------------------------------------------
+
+# Local environment: contains the API key, database passwords and the panel
+# administrator. Copy .env.example instead (cp .env.example .env).
+.env
+.env.*
+!.env.example
+
+# Private keys / certificates dropped into the nginx image by mkcert.
+# The .gitkeep keeps the folder itself in the tree.
+dockerfiles/nginx/certs/*
+!dockerfiles/nginx/certs/.gitkeep
+
+# Upstream SMF archives (~4 MB). The PHP image downloads them automatically when
+# they are missing (dockerfiles/php/download-smf.sh), so they never need to be
+# committed. The RESTful API archive below is NOT re-downloadable, so it stays
+# tracked: it is built from the mod clone and its sha256 is referenced by
+# dockerfiles/dump.sql (smf_log_packages).
+dockerfiles/downloads/*.zip
+
+# Local compose overrides: machine-specific ports, volumes or extra mounts.
+compose.override.yaml
+compose.override.yml
+*.local.yaml
+*.local.yml
+
+# Database dumps and backups produced while experimenting. dump.sql is the
+# curated seed and stays tracked; ad-hoc exports do not.
+*.sql.gz
+*.sql.bak
+*.dump
+*.bak
+*.orig
+*~
+
+# Runtime output: stack logs, temporary exports, local scratch folders.
+*.log
+/tmp/
+/.tmp/
+/backups/
+
+# Editors and operating systems. Add personal tool folders here rather than
+# committing them.
+.idea/
+.vscode/
+.fleet/
+*.iml
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node artifacts (only relevant if documentation tooling is ever added here).
+node_modules/
+npm-debug.log*

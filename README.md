@@ -36,6 +36,14 @@ curl -H 'Authorization: Bearer YOUR_KEY' \
      'https://forum.example.com/index.php?action=api;path=v1/members/5'
 ```
 
+## Examples
+
+Want to see the API in action? [examples/moonshine-admin](examples/moonshine-admin/README.md)
+holds a self-contained Docker Compose stack: an SMF 2.1.8 forum with this mod
+pre-installed and a [MoonShine V](https://github.com/moonshine-software/v)
+admin panel managing the forum through the API — members, groups, categories,
+boards, topics and drag-and-drop ordering, no manual panel setup.
+
 ## Resources
 
 | Resource | Endpoints |
